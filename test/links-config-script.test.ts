@@ -269,6 +269,7 @@ test("a temporary directory that cannot be used is an error naming the cause", a
   const r = await runScript({ config: "sort: true\n", yq: { out: "true" }, args: page, tmpDir: "missing-tmp" });
   assert.equal(r.code, 1, r.stderr);
   assert.ok(r.stderr.includes("cannot create a temporary file"), r.stderr);
+  assert.ok(r.stderr.includes("(check TMPDIR)"), r.stderr);
   assert.equal(r.npmArgs, undefined);
   assert.equal(r.yqCalled, false);
 });
