@@ -13,7 +13,7 @@ all: check
 | types | - | - | - | - | - | skipped (user): the TypeScript compiler and @types/node were not allowed into the packages |
 | unit | test-file | test-unit | src/**,test/** | <1s | yes | filled |
 | integration | - | - | - | - | - | skipped (state): nothing external to integrate with, the program-level test is part of unit |
-| end-to-end | - | - | - | - | - | skipped (state): no end-to-end test yet, it is the open task The written page is verified in WebKit |
+| end-to-end | - | test-e2e | e2e/**,playwright.config.ts,src/** | 7s | yes | filled |
 | secrets | - | - | - | - | - | skipped (user): gitleaks is not installed and the user chose the check off |
 | dependencies | - | scan-deps | package.json,package-lock.json | 2s | no | filled |
 | code-security | - | - | - | - | - | skipped (state): about 100 lines of own code, too little for a code scanner to find anything |
@@ -26,7 +26,7 @@ make test-one NAME=<test name>
 
 - Types are not checked: Node strips them without looking, so a wrong type passes every check here.
 - Credentials committed by accident are not searched for.
-- Nothing opens the written page in a browser yet.
+- The page is opened in WebKit only; no other browser is tried. The end-to-end check needs the WebKit browser installed once per machine (`npx playwright install webkit`) and fails without it.
 - `scan-deps` asks the npm registry, so it is not part of `check`; run `make scan-deps` by hand or in the platform's workflow.
 - Import order is not enforced; Biome's import sorting is off.
 
