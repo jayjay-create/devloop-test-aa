@@ -80,9 +80,20 @@ https://example.org/a
 /relative/page
 ```
 
+The links of `test/sample.html` can be fed in the same way, with htmlq in front, which is what `npm run links` does:
+
+```
+$ htmlq --attribute href 'a[href]' < test/sample.html | node src/bin.ts page.html
+https://example.org/a
+/relative/page
+https://example.org/b?x=1&y=2
+```
+
+This writes the same page as in Call 1 to `page.html`.
+
 ## Exit codes and messages
 
-Messages go to stderr. The messages of `scripts/links.sh` print the file name with control characters dropped (the filter is not complete for the 8-bit control characters in a UTF-8 locale); the messages of `src/bin.ts` print names and system messages with every control character replaced by a space. Either way an error stays on one line.
+Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops control characters from the file name it prints; in a UTF-8 locale some 8-bit control characters may survive that filter. `src/main.ts` replaces every control character in a name or system message with a space.
 
 | Exit | Message | Cause |
 |---|---|---|
@@ -90,8 +101,8 @@ Messages go to stderr. The messages of `scripts/links.sh` print the file name wi
 | 1 | `error: htmlq is not installed or not on the PATH (install it, for example: brew install htmlq)` | `scripts/links.sh`: htmlq is not found. |
 | 1 | `error: cannot read HTML file: <name>` | `scripts/links.sh`: the HTML file does not exist, is not a regular file or is not readable. |
 | 1 | `error: htmlq failed on: <name>` | `scripts/links.sh`: htmlq exited with an error on the file. |
-| 1 | `error: cannot read stdin: <os message>` | `src/bin.ts`: reading stdin failed. |
-| 1 | `error: cannot write <target>: <os message>` | `src/bin.ts`: the output page could not be written. |
+| 1 | `error: cannot read stdin: <os message>` | `src/main.ts`: reading stdin failed. |
+| 1 | `error: cannot write <target>: <os message>` | `src/main.ts`: the output page could not be written. |
 | 2 | `usage: npm run links -- <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
 
 Examples:
