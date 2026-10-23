@@ -1,12 +1,10 @@
 #!/bin/sh
 # Prints the distinct links of an HTML file and writes them as a page.
-# Usage: npm run links -- <html-file> [<output-page>]
+# Usage: npm run links -- [--sort] <html-file> [<output-page>]
 # npm appends its arguments after the whole script line, so they are handled here.
 
-if [ $# -lt 1 ]; then
-  echo "usage: npm run links -- <html-file> [<output-page>]" >&2
-  exit 2
-fi
+# Names are printed with printf '%s', never echo: some shells' echo expands backslash sequences, so a
+# name spelled \033[2J would reach the terminal as a real escape sequence.
 
 # A file name is user input: control characters (ESC, newline and the like) are dropped before it
 # is printed. `tr` follows the locale: in a UTF-8 locale the 8-bit C1 controls may survive, so this
@@ -20,13 +18,36 @@ printable() {
   fi
 }
 
+# One pass over the arguments: --sort may stand anywhere and is remembered, any other --* is an
+# error (before htmlq is looked for and before a temp file is made), the rest stay the positionals.
+want_sort=""
+n=$#
+while [ "$n" -gt 0 ]; do
+  a="$1"
+  shift
+  case "$a" in
+    --sort) want_sort=1 ;;
+    --*)
+      printf '%s\n' "error: unknown option: $(printable "$a") (only --sort is supported)" >&2
+      exit 2
+      ;;
+    *) set -- "$@" "$a" ;;
+  esac
+  n=$((n - 1))
+done
+
+if [ $# -lt 1 ]; then
+  echo "usage: npm run links -- [--sort] <html-file> [<output-page>]" >&2
+  exit 2
+fi
+
 if ! command -v htmlq >/dev/null 2>&1; then
   echo "error: htmlq is not installed or not on the PATH (install it, for example: brew install htmlq)" >&2
   exit 1
 fi
 
 if [ ! -f "$1" ] || [ ! -r "$1" ]; then
-  echo "error: cannot read HTML file: $(printable "$1")" >&2
+  printf '%s\n' "error: cannot read HTML file: $(printable "$1")" >&2
   exit 1
 fi
 
@@ -39,12 +60,18 @@ trap 'rm -f "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM
 
 if ! htmlq --attribute href 'a[href]' < "$1" > "$tmp"; then
-  echo "error: htmlq failed on: $(printable "$1")" >&2
+  printf '%s\n' "error: htmlq failed on: $(printable "$1")" >&2
   exit 1
 fi
 
 if [ $# -ge 2 ]; then
-  node "$bin" "$2" < "$tmp"
+  if [ -n "$want_sort" ]; then
+    node "$bin" --sort "$2" < "$tmp"
+  else
+    node "$bin" "$2" < "$tmp"
+  fi
+elif [ -n "$want_sort" ]; then
+  node "$bin" --sort < "$tmp"
 else
   node "$bin" < "$tmp"
 fi

@@ -21,7 +21,7 @@ Both calls do the same after the links are known:
 Run from the repository root:
 
 ```
-npm run links -- <html-file> [<output-page>]
+npm run links -- [--sort] <html-file> [<output-page>]
 ```
 
 The script takes the `href` of every `a` element of the HTML file with htmlq and hands the links to the program. Other attributes, such as the `href` of a `link` element or the `src` of an image, are ignored.
@@ -45,7 +45,20 @@ The link that appears twice is printed once. With an output page, the same links
 $ npm run links -- test/sample.html page.html
 ```
 
-The written page holds:
+With `--sort` (anywhere among the arguments) the links are printed and written sorted by character code:
+
+```
+$ npm run links -- --sort test/sample.html
+
+> links
+> sh scripts/links.sh --sort test/sample.html
+
+/relative/page
+https://example.org/a
+https://example.org/b?x=1&y=2
+```
+
+The written page (unsorted call) holds:
 
 ```html
 <!doctype html>
@@ -113,7 +126,8 @@ Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops 
 | 1 | `error: cannot read stdin: <os message>` | `src/main.ts`: reading stdin failed. |
 | 1 | `error: cannot write <target>: <os message>` | `src/main.ts`: the output page could not be written. |
 | 2 | `error: unknown option: <arg> (only --sort is supported)` | `src/main.ts`: an argument starting with `--` other than `--sort`. |
-| 2 | `usage: npm run links -- <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
+| 2 | `error: unknown option: <arg> (only --sort is supported)` | `scripts/links.sh`: an argument starting with `--` other than `--sort`, checked before htmlq is looked for. |
+| 2 | `usage: npm run links -- [--sort] <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
 
 Examples:
 
@@ -131,7 +145,7 @@ error: htmlq failed on: test/sample.html
 # exit 1
 
 $ sh scripts/links.sh
-usage: npm run links -- <html-file> [<output-page>]
+usage: npm run links -- [--sort] <html-file> [<output-page>]
 # exit 2
 
 $ node src/bin.ts --foo < /dev/null
