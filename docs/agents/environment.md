@@ -18,23 +18,6 @@ Node 25 runs the TypeScript files directly (type stripping): no build and no run
 - `brew install gitleaks 2>& 1` installed into /opt/homebrew/bin
 - `npm install -g @mermaid-js/mermaid-cli 2>& 1` installed into /opt/homebrew/bin
 
-## Install permission
-
-install-tools: yes
-install-place: /usr/local/bin
-install-place: /usr/local/sbin
-install-place: /opt
-install-place: ~/.local/bin
-install-place: ~/bin
-install-place: ~/go/bin
-install-place: ~/Library/Caches/ms-playwright
-install-place: ~/.cache/ms-playwright
-install-place: ~/Library/Caches/Cypress
-install-place: ~/.cache/Cypress
-install-place: ~/.cache/puppeteer
-install-route: npm
-install-answered: 2026-10-23
-
 ## Dependency permission
 
 dependency-tools: yes
