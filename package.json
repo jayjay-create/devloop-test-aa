@@ -7,6 +7,7 @@
   },
   "scripts": {
     "test": "node --test 'test/*.test.ts'",
+    "links": "sh scripts/links.sh",
     "test:e2e": "playwright test"
   },
   "devDependencies": {
