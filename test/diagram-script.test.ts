@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 const script = fileURLToPath(new URL("../scripts/diagram.sh", import.meta.url));
 const docs = fileURLToPath(new URL("../docs", import.meta.url));
 const TIMEOUT_MS = 20000;
+const KILL_WAIT_MS = 2000; // after the kill; a process that still holds its pipes then is left to the OS
 const SYSTEM_PATH = "/usr/bin:/bin";
 
 type Result = { code: number | null; stdout: string; stderr: string };
@@ -46,7 +47,7 @@ async function run(scriptPath: string, args: string[], env: NodeJS.ProcessEnv): 
       // no group to kill (already gone, or never spawned): fall back to the child itself
       child.kill("SIGKILL");
     }
-    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 2000).unref())]);
+    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, KILL_WAIT_MS).unref())]);
   }
 }
 
@@ -93,7 +94,7 @@ function escapeRegExp(text: string): string {
 
 // The script keeps its temp directory next to the target and removes it again.
 async function leftovers(dir: string): Promise<string[]> {
-  return (await readdir(join(dir, "docs"))).filter((name) => name.startsWith("."));
+  return (await readdir(join(dir, "docs"))).filter((name) => name.startsWith(".diagram."));
 }
 
 test("a PATH without mmdc: exit 1 and stderr begins with the install message", async () => {
