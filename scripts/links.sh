@@ -1,12 +1,7 @@
 #!/bin/sh
 # Prints the distinct links of an HTML file and writes them as a page.
-# Usage: npm run links -- <html-file> [<output-page>]
+# Usage: npm run links -- [--sort] <html-file> [<output-page>]
 # npm appends its arguments after the whole script line, so they are handled here.
-
-if [ $# -lt 1 ]; then
-  echo "usage: npm run links -- <html-file> [<output-page>]" >&2
-  exit 2
-fi
 
 # A file name is user input: control characters (ESC, newline and the like) are dropped before it
 # is printed. `tr` follows the locale: in a UTF-8 locale the 8-bit C1 controls may survive, so this
@@ -19,6 +14,29 @@ printable() {
     printf '%s' "(name without printable characters)"
   fi
 }
+
+# One pass over the arguments: --sort may stand anywhere and is remembered, any other --* is an
+# error (before htmlq is looked for and before a temp file is made), the rest stay the positionals.
+sort=""
+n=$#
+while [ "$n" -gt 0 ]; do
+  a="$1"
+  shift
+  case "$a" in
+    --sort) sort=1 ;;
+    --*)
+      echo "error: unknown option: $(printable "$a") (only --sort is supported)" >&2
+      exit 2
+      ;;
+    *) set -- "$@" "$a" ;;
+  esac
+  n=$((n - 1))
+done
+
+if [ $# -lt 1 ]; then
+  echo "usage: npm run links -- [--sort] <html-file> [<output-page>]" >&2
+  exit 2
+fi
 
 if ! command -v htmlq >/dev/null 2>&1; then
   echo "error: htmlq is not installed or not on the PATH (install it, for example: brew install htmlq)" >&2
@@ -44,7 +62,13 @@ if ! htmlq --attribute href 'a[href]' < "$1" > "$tmp"; then
 fi
 
 if [ $# -ge 2 ]; then
-  node "$bin" "$2" < "$tmp"
+  if [ -n "$sort" ]; then
+    node "$bin" --sort "$2" < "$tmp"
+  else
+    node "$bin" "$2" < "$tmp"
+  fi
+elif [ -n "$sort" ]; then
+  node "$bin" --sort < "$tmp"
 else
   node "$bin" < "$tmp"
 fi
