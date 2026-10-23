@@ -12,7 +12,7 @@ printable() {
   if [ -n "$name" ]; then
     printf '%s' "$name"
   else
-    printf '%s' "(name without printable characters)"
+    printf '%s' "(no printable characters)"
   fi
 }
 
@@ -25,11 +25,20 @@ if [ -f "$config" ]; then
     echo "error: yq is not installed or not on the PATH, but links.config.yaml needs it (install it, for example: brew install yq)" >&2
     exit 1
   fi
-  # No pipe: a pipe would hide the exit code of yq (POSIX sh has no pipefail).
-  value="$(yq '.sort' "$config" 2>&1)"
+  # yq's stderr goes to a file of its own: a warning from a yq that succeeded must not become part of
+  # the value. No pipe either: a pipe would hide the exit code of yq (POSIX sh has no pipefail).
+  errfile="$(mktemp)" || exit 1
+  trap 'rm -f "$errfile"' EXIT
+  trap 'exit 1' HUP INT TERM
+  value="$(yq '.sort' "$config" 2>"$errfile")"
   status=$?
+  detail="$(cat "$errfile")"
+  # The file goes before the exec below, which replaces the shell and so never runs the EXIT trap.
+  rm -f "$errfile"
+  trap - EXIT HUP INT TERM
   if [ "$status" -ne 0 ]; then
-    printf '%s\n' "error: yq failed on links.config.yaml (exit $status): $(printable "$value")" >&2
+    [ -n "$detail" ] || detail="$value"
+    printf '%s\n' "error: yq failed on links.config.yaml (exit $status): $(printable "$detail")" >&2
     exit 1
   fi
 fi
