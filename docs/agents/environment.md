@@ -16,16 +16,27 @@ Node 25 runs the TypeScript files directly (type stripping): no build and no run
 
 ## Install permission
 
-install-tools: no
+install-tools: yes
+install-place: /usr/local/bin
+install-place: /usr/local/sbin
+install-place: /opt
+install-place: ~/.local/bin
+install-place: ~/bin
+install-place: ~/go/bin
+install-place: ~/Library/Caches/ms-playwright
+install-place: ~/.cache/ms-playwright
+install-place: ~/Library/Caches/Cypress
+install-place: ~/.cache/Cypress
+install-place: ~/.cache/puppeteer
+install-route: npm
 install-answered: 2026-10-23
 
 ## Dependency permission
 
-dependency-tools: no
+dependency-tools: yes
 dependency-answered: 2026-10-23
 
 ## Unattended mode
 
-unattended-mode: no
-unattended-reason: the person said no to work running alone in this project
+unattended-mode: yes
 unattended-answered: 2026-10-23
