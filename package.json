@@ -8,9 +8,10 @@
   "scripts": {
     "test": "node --test 'test/*.test.ts'",
     "links": "sh scripts/links.sh",
+    "links:config": "sh scripts/links-config.sh",
     "diagram": "sh scripts/diagram.sh",
     "test:e2e": "playwright test",
-    "test:script": "node --test test/links-script.test.ts test/diagram-script.test.ts"
+    "test:script": "node --test test/links-script.test.ts test/diagram-script.test.ts test/links-config-script.test.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.2",
