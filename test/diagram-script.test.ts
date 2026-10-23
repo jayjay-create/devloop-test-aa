@@ -71,8 +71,9 @@ async function stubMmdc(stubs: string, body: string): Promise<void> {
   await chmod(file, 0o755);
 }
 
-// The stub writes to the file after `-o`, as mmdc does.
+// The stub writes to the file after `-o`, as mmdc does, and like mmdc refuses an output name not ending in .svg.
 const writeStub = `while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done
+case "$out" in *.svg) ;; *) echo "output must end in .svg" >&2; exit 4 ;; esac
 printf 'stub svg' > "$out"`;
 
 test("a PATH without mmdc: exit 1 and stderr begins with the install message", async () => {

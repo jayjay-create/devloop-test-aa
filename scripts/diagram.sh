@@ -23,9 +23,11 @@ if [ ! -f "$source" ]; then
 fi
 
 # The render goes to a temp file and replaces the SVG only after mmdc succeeded, so a failed
-# render leaves the committed SVG as it was.
-tmp="$(mktemp)" || exit 1
-trap 'rm -f "$tmp"' EXIT
+# render leaves the committed SVG as it was. mmdc wants the output name to end in .svg, and
+# POSIX mktemp has no suffix, so the file lives in a temp directory.
+tmpdir="$(mktemp -d)" || exit 1
+tmp="$tmpdir/links.svg"
+trap 'rm -rf "$tmpdir"' EXIT
 trap 'exit 1' HUP INT TERM
 
 if ! mmdc -i "$source" -o "$tmp" -e svg; then
