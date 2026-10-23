@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,7 +46,7 @@ async function run(scriptPath: string, args: string[], env: NodeJS.ProcessEnv): 
       // no group to kill (already gone, or never spawned): fall back to the child itself
       child.kill("SIGKILL");
     }
-    await closed;
+    await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, 2000).unref())]);
   }
 }
 
@@ -93,7 +93,7 @@ function escapeRegExp(text: string): string {
 
 // The script keeps its temp directory next to the target and removes it again.
 async function leftovers(dir: string): Promise<string[]> {
-  return (await readdir(join(dir, "docs"))).filter((name) => name.startsWith(".diagram."));
+  return (await readdir(join(dir, "docs"))).filter((name) => name.startsWith("."));
 }
 
 test("a PATH without mmdc: exit 1 and stderr begins with the install message", async () => {
@@ -201,6 +201,8 @@ test("docs/links.svg is a directory: exit 1 and the message, mmdc is not run", a
     const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: docs\/links\.svg is a directory$/m);
+    assert.equal(r.stdout, "");
+    assert.ok((await stat(svg)).isDirectory(), "docs/links.svg is no longer a directory");
     await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
     assert.deepEqual(await leftovers(dir), []);
   });

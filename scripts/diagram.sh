@@ -22,15 +22,16 @@ if [ ! -f "$input" ]; then
   exit 1
 fi
 
-# The render goes to a temp file and replaces the SVG only after mmdc succeeded and wrote something, so a
-# failed render leaves the committed SVG as it was. mmdc wants the output name to end in .svg, and POSIX
-# mktemp has no suffix, so the file lives in a temp directory. That directory sits next to the target:
-# the final mv is then a rename on one filesystem and cannot leave a half-copied SVG behind.
+# mv would move the file into a directory of that name and still exit 0.
 if [ -d "$target" ]; then
   echo "error: docs/links.svg is a directory" >&2
   exit 1
 fi
 
+# The render goes to a temp file and replaces the SVG only after mmdc succeeded and wrote something, so a
+# failed render leaves the committed SVG as it was. mmdc wants the output name to end in .svg, and POSIX
+# mktemp has no suffix, so the file lives in a temp directory. That directory sits next to the target:
+# the final mv is then a rename on one filesystem and cannot leave a half-copied SVG behind.
 tmpdir="$(mktemp -d "$docs/.diagram.XXXXXX")" || {
   echo "error: cannot create a temp directory in docs/" >&2
   exit 1
