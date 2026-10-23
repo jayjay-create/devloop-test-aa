@@ -80,7 +80,7 @@ https://example.org/a
 /relative/page
 ```
 
-The links of `test/sample.html` can be fed in the same way, with htmlq in front, which is what `npm run links` does:
+The links of `test/sample.html` can be fed in the same way. This is the htmlq call that `npm run links` makes, written as a pipe:
 
 ```
 $ htmlq --attribute href 'a[href]' < test/sample.html | node src/bin.ts page.html
@@ -89,11 +89,11 @@ https://example.org/a
 https://example.org/b?x=1&y=2
 ```
 
-This writes the same page as in Call 1 to `page.html`.
+This writes the same page as the `page.html` of Call 1.
 
 ## Exit codes and messages
 
-Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops control characters from the file name it prints; in a UTF-8 locale some 8-bit control characters may survive that filter. `src/main.ts` replaces every control character in a name or system message with a space.
+Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops control characters from the file name it prints; in a UTF-8 locale some 8-bit control characters may survive that filter. `src/main.ts` (the program that `src/bin.ts` starts) replaces each run of control characters, U+2028 and U+2029 in a name or system message with one space.
 
 | Exit | Message | Cause |
 |---|---|---|
