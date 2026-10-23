@@ -43,7 +43,8 @@ async function run(scriptPath: string, args: string[], env: NodeJS.ProcessEnv): 
     try {
       process.kill(-(child.pid as number), "SIGKILL");
     } catch {
-      // the group is already gone
+      // no group to kill (already gone, or never spawned): fall back to the child itself
+      child.kill("SIGKILL");
     }
     await closed;
   }
@@ -79,11 +80,15 @@ const writeStub = `while [ $# -gt 0 ]; do
 done
 [ -f "$in" ] || { echo "input is not a file: $in" >&2; exit 5; }
 case "$out" in *.svg) ;; *) echo "output must end in .svg" >&2; exit 4 ;; esac
-printf '%s %s\\n' "$in" "$out" >> "$STUB_LOG"
+printf '%s\\n%s\\n' "$in" "$out" >> "$STUB_LOG"
 printf 'stub svg' > "$out"`;
 
 function envWith(stubs: string, log: string, path = `${stubs}:${SYSTEM_PATH}`): NodeJS.ProcessEnv {
   return { ...process.env, PATH: path, STUB_LOG: log };
+}
+
+function escapeRegExp(text: string): string {
+  return text.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 // The script keeps its temp directory next to the target and removes it again.
@@ -125,9 +130,9 @@ test("a stub mmdc that writes a file and exits 0: exit 0 and docs/links.svg hold
     assert.equal(r.code, 0, r.stderr);
     assert.equal(await readFile(svg, "utf8"), "stub svg");
     assert.equal(r.stdout, "");
-    const [input, output] = (await readFile(log, "utf8")).trim().split(" ");
-    assert.match(input, /docs\/links\.mmd$/);
-    assert.match(output, /\/links\.svg$/);
+    const [input, output] = (await readFile(log, "utf8")).trim().split("\n");
+    assert.equal(input, `${dir}/scripts/../docs/links.mmd`);
+    assert.match(output, new RegExp(`^${escapeRegExp(`${dir}/scripts/../docs`)}/\\.diagram\\.[^/]+/links\\.svg$`));
     assert.deepEqual(await leftovers(dir), []);
   });
 });
@@ -141,7 +146,8 @@ test("a stub mmdc that exits non-zero after writing: exit 1 and the existing doc
     const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, log));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: mmdc failed rendering docs\/links\.mmd$/m);
-    assert.ok((await readFile(log, "utf8")).includes("/links.svg"), "the stub did not write to the temp output");
+    const [, output] = (await readFile(log, "utf8")).trim().split("\n");
+    assert.match(output, new RegExp(`^${escapeRegExp(`${dir}/scripts/../docs`)}/\\.diagram\\.[^/]+/links\\.svg$`));
     assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
     assert.deepEqual(await leftovers(dir), []);
   });
@@ -175,8 +181,27 @@ test("a missing docs/links.mmd: exit 1 and the missing-source message", async ()
   await withSandbox(async (dir, stubs) => {
     await stubMmdc(stubs, writeStub);
     await rm(join(dir, "docs", "links.mmd"));
+    const svg = join(dir, "docs", "links.svg");
+    const before = await readFile(svg);
     const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: docs\/links\.mmd is missing$/m);
+    assert.equal(r.stdout, "");
+    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
+    await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
+    assert.deepEqual(await leftovers(dir), []);
+  });
+});
+
+test("docs/links.svg is a directory: exit 1 and the message, mmdc is not run", async () => {
+  await withSandbox(async (dir, stubs, svg) => {
+    await stubMmdc(stubs, writeStub);
+    await rm(svg);
+    await mkdir(svg);
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stderr, /^error: docs\/links\.svg is a directory$/m);
+    await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
+    assert.deepEqual(await leftovers(dir), []);
   });
 });
