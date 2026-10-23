@@ -36,7 +36,9 @@ function runProgram(outPath: string, stdin: string): Promise<Run> {
       PROGRAM_TIMEOUT_MS,
     );
   });
-  child.stdin.on("error", () => {}); // a program that exited early shows up in `code`, not here
+  child.stdin.on("error", (e: NodeJS.ErrnoException) => {
+    if (e.code !== "EPIPE") throw e; // a program that exited early shows up in `code`, not here
+  });
   child.stdin.end(stdin);
   return done.finally(() => {
     clearTimeout(timer);
@@ -44,52 +46,53 @@ function runProgram(outPath: string, stdin: string): Promise<Run> {
   });
 }
 
-const cleanup: string[] = [];
-
-// Runs the program on `stdin` into a fresh temp directory that is removed afterwards.
-async function writePage(stdin: string): Promise<{ url: string; run: Run }> {
+// Runs the program on `stdin` into a fresh temp directory, hands the page's URL and the run to `check`,
+// and removes the directory afterwards, whatever `check` does.
+async function withPage(stdin: string, check: (url: string, run: Run) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "links-e2e-"));
-  cleanup.push(dir);
-  const out = join(dir, "out.html");
-  const run = await runProgram(out, stdin);
-  expect(run.stderr).toBe("");
-  expect(run.code).toBe(0);
-  return { url: pathToFileURL(out).href, run };
+  try {
+    const out = join(dir, "out.html");
+    const run = await runProgram(out, stdin);
+    expect(run.code, `exit code, stderr: ${run.stderr}`).toBe(0);
+    expect(run.stderr).toBe("");
+    await check(pathToFileURL(out).href, run);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
-test.afterEach(async () => {
-  await Promise.all(cleanup.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
-});
-
 test("page lists the distinct links in order, and the console lists the same", async ({ page }) => {
-  const { url, run } = await writePage(INPUT);
-  expect(run.stdout).toBe(`${EXPECTED.join("\n")}\n`);
+  await withPage(INPUT, async (url, run) => {
+    expect(run.stdout).toBe(`${EXPECTED.join("\n")}\n`);
 
-  await page.goto(url);
-  const anchors = page.locator("a");
-  await expect(anchors).toHaveCount(3);
-  expect(await anchors.evaluateAll((els) => els.map((e) => e.getAttribute("href")))).toEqual(EXPECTED);
-  expect(await anchors.allTextContents()).toEqual(EXPECTED);
+    await page.goto(url);
+    const anchors = page.locator("a");
+    await expect(anchors).toHaveCount(3);
+    expect(await anchors.evaluateAll((els) => els.map((e) => e.getAttribute("href")))).toEqual(EXPECTED);
+    expect(await anchors.allTextContents()).toEqual(EXPECTED);
+  });
 });
 
 test("empty stdin gives a page without links", async ({ page }) => {
-  const { url, run } = await writePage("");
-  expect(run.stdout).toBe("");
+  await withPage("", async (url, run) => {
+    expect(run.stdout).toBe("");
 
-  await page.goto(url);
-  await expect(page.locator("body")).toBeAttached();
-  await expect(page.locator("a")).toHaveCount(0);
+    await page.goto(url);
+    await expect(page).toHaveTitle("Links"); // the program's own page, not some empty file
+    await expect(page.locator("a")).toHaveCount(0);
+  });
 });
 
 // Beyond the fixed list: markup-like and entity-like text that a browser would NOT show as given
 // unless the program escapes it (the `&` and `<2>` of the fixed list happen to survive unescaped).
 test("markup and entities in a link show exactly as given", async ({ page }) => {
   const nasty = `https://d.example/?q="x"&amp;<b>y</b>'`;
-  const { url, run } = await writePage(`${nasty}\n`);
-  expect(run.stdout).toBe(`${nasty}\n`);
+  await withPage(`${nasty}\n`, async (url, run) => {
+    expect(run.stdout).toBe(`${nasty}\n`);
 
-  await page.goto(url);
-  await expect(page.locator("a")).toHaveCount(1);
-  expect(await page.locator("a").getAttribute("href")).toBe(nasty);
-  expect(await page.locator("a").textContent()).toBe(nasty);
+    await page.goto(url);
+    await expect(page.locator("a")).toHaveCount(1);
+    expect(await page.locator("a").getAttribute("href")).toBe(nasty);
+    expect(await page.locator("a").textContent()).toBe(nasty);
+  });
 });
