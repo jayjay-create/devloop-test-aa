@@ -34,7 +34,7 @@ if [ -f "$config" ]; then
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
-  # An explicit template: a bare mktemp ignores TMPDIR on macOS.
+  # An explicit template: measured on macOS, a bare mktemp put the file outside TMPDIR.
   errfile="$(mktemp "${TMPDIR:-/tmp}/links-config.XXXXXX")" || {
     echo "error: cannot create a temporary file to read yq's messages (check TMPDIR)" >&2
     exit 1

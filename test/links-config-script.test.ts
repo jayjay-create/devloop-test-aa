@@ -32,6 +32,8 @@ type Setup = {
   args?: string[];
   cwdOther?: boolean;
   npmCode?: number;
+  // TMPDIR of the run, relative to the project root; the default is a directory that exists.
+  tmpDir?: string;
 };
 
 type Outcome = Result & {
@@ -42,6 +44,8 @@ type Outcome = Result & {
   dir: string;
   // Files the script left in its TMPDIR.
   tmpLeft: string[];
+  // Files in its TMPDIR at the moment yq ran; undefined = yq never ran.
+  tmpDuring: string[] | undefined;
 };
 
 // One argument per line; undefined = the stub never ran.
@@ -74,13 +78,15 @@ async function runScript(s: Setup): Promise<Outcome> {
       await writeFile(
         join(dir, "bin", "yq"),
         `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done > "${dir}/yq-args"\n` +
+          // The names in TMPDIR while yq runs; a glob, since ls is not on the PATH of the run.
+          `for f in "$TMPDIR"/*; do printf '%s\\n' "\${f##*/}"; done > "${dir}/yq-tmp"\n` +
           `printf '%s\\n' "$YQ_ERR" >&2\nprintf '%s\\n' "$YQ_OUT"\nexit "$YQ_CODE"\n`,
       );
       await chmod(join(dir, "bin", "yq"), 0o755);
     }
     const env = {
       PATH: join(dir, "bin"),
-      TMPDIR: join(dir, "tmp"),
+      TMPDIR: join(dir, s.tmpDir ?? "tmp"),
       YQ_OUT: s.yq?.out ?? "",
       YQ_ERR: s.yq?.err ?? "",
       YQ_CODE: String(s.yq?.code ?? 0),
@@ -123,6 +129,7 @@ async function runScript(s: Setup): Promise<Outcome> {
       yqArgs,
       dir,
       tmpLeft: await readdir(join(dir, "tmp")),
+      tmpDuring: lines(await read("yq-tmp")),
     };
   } finally {
     clearTimeout(timer);
@@ -209,14 +216,18 @@ test("yq is asked for .sort of links.config.yaml in the project root", async () 
   assert.deepEqual(r.yqArgs, [".sort", join(r.dir, "links.config.yaml")]);
 });
 
-test("arguments with spaces stay single arguments, with and without --sort", async () => {
-  const args = ["my page.html", "out page.html"];
-  const unsorted = await runScript({ config: "sort: false\n", yq: { out: "false" }, args });
-  assert.equal(unsorted.code, 0, unsorted.stderr);
-  assert.deepEqual(unsorted.npmArgs, ["run", "links", "--", ...args]);
-  const sorted = await runScript({ config: "sort: true\n", yq: { out: "true" }, args });
-  assert.equal(sorted.code, 0, sorted.stderr);
-  assert.deepEqual(sorted.npmArgs, ["run", "links", "--", "--sort", ...args]);
+const spaced = ["my page.html", "out page.html"];
+
+test("arguments with spaces stay single arguments without --sort", async () => {
+  const r = await runScript({ config: "sort: false\n", yq: { out: "false" }, args: spaced });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...spaced]);
+});
+
+test("arguments with spaces stay single arguments with --sort", async () => {
+  const r = await runScript({ config: "sort: true\n", yq: { out: "true" }, args: spaced });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--sort", ...spaced]);
 });
 
 test("the exit code of npm run links is passed on", async () => {
@@ -242,12 +253,24 @@ test("a control character in the message of a failing yq is not printed raw", as
   assert.equal(r.stderr.split("\n").length, 2, JSON.stringify(r.stderr));
 });
 
-test("the temporary file for yq's messages is removed on every way out", async () => {
+test("the temporary file for yq's messages stands in TMPDIR while yq runs and is gone on every way out", async () => {
   const ok = await runScript({ config: "sort: true\n", yq: { out: "true", err: "warning" }, args: page });
+  assert.equal(ok.tmpDuring?.length, 1, String(ok.tmpDuring));
+  assert.ok(ok.tmpDuring?.[0]?.startsWith("links-config."), String(ok.tmpDuring));
   const invalid = await runScript({ config: "sort: x\n", yq: { out: "x" }, args: page });
   const failing = await runScript({ config: "sort: [\n", yq: { out: "", code: 1, err: "bad" }, args: page });
-  assert.deepEqual([ok.code, invalid.code, failing.code], [0, 1, 1]);
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.equal(invalid.code, 1, invalid.stderr);
+  assert.equal(failing.code, 1, failing.stderr);
   assert.deepEqual([ok.tmpLeft, invalid.tmpLeft, failing.tmpLeft], [[], [], []]);
+});
+
+test("a temporary directory that cannot be used is an error naming the cause", async () => {
+  const r = await runScript({ config: "sort: true\n", yq: { out: "true" }, args: page, tmpDir: "missing-tmp" });
+  assert.equal(r.code, 1, r.stderr);
+  assert.ok(r.stderr.includes("cannot create a temporary file"), r.stderr);
+  assert.equal(r.npmArgs, undefined);
+  assert.equal(r.yqCalled, false);
 });
 
 test("an explicit --sort with sort: false is passed on", async () => {
