@@ -1,9 +1,9 @@
-.PHONY: check fmt fmt-file fmt-write lint lint-file test-unit test-file test-one scan-deps services-up
+.PHONY: check fmt fmt-file fmt-write lint lint-file test-unit test-file test-one test-e2e scan-deps services-up
 
 BIOME = npx --no-install biome
 
 # Every blocking class in sequence, as listed in docs/agents/checks.md.
-check: fmt lint test-unit
+check: fmt lint test-unit test-e2e
 
 fmt:
 	$(BIOME) format .
@@ -33,6 +33,10 @@ test-file:
 test-one:
 	@test -n "$(NAME)" || { echo "usage: make test-one NAME=<test name>" >&2; exit 2; }
 	node --test --test-name-pattern "$(NAME)" 'test/*.test.ts'
+
+# Needs the WebKit browser: npx playwright install webkit (once per machine).
+test-e2e:
+	npm run test:e2e
 
 # Asks the npm registry, so it is not part of check: an outage there must not stop work here.
 scan-deps:
