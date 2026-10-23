@@ -156,10 +156,10 @@ test("yq missing and the file missing still runs unsorted", async () => {
   assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
 });
 
-test("a failing yq is an error with its message and no run", async () => {
-  const r = await runScript({ config: "sort: [\n", yq: { out: "bad yaml here", code: 1 }, args: page });
+test("a failing yq is an error and no run, even when it printed a valid value", async () => {
+  const r = await runScript({ config: "sort: [\n", yq: { out: "true", code: 1 }, args: page });
   assert.equal(r.code, 1, r.stderr);
-  assert.ok(r.stderr.includes("bad yaml here"), r.stderr);
+  assert.ok(r.stderr.includes("links.config.yaml"), r.stderr);
   assert.equal(r.npmArgs, undefined);
 });
 
