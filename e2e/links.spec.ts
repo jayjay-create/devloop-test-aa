@@ -50,8 +50,8 @@ function runProgram(outPath: string, stdin: string, flags: string[] = []): Promi
 // and removes the directory afterwards, whatever `check` does.
 async function withPage(
   stdin: string,
+  flags: string[],
   check: (url: string, run: Run) => Promise<void>,
-  flags: string[] = [],
 ): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "links-e2e-"));
   try {
@@ -66,7 +66,7 @@ async function withPage(
 }
 
 test("page lists the distinct links in order, and the console lists the same", async ({ page }) => {
-  await withPage(INPUT, async (url, run) => {
+  await withPage(INPUT, [], async (url, run) => {
     expect(run.stdout).toBe(`${EXPECTED.join("\n")}\n`);
 
     await page.goto(url);
@@ -78,7 +78,7 @@ test("page lists the distinct links in order, and the console lists the same", a
 });
 
 test("empty stdin gives a page without links", async ({ page }) => {
-  await withPage("", async (url, run) => {
+  await withPage("", [], async (url, run) => {
     expect(run.stdout).toBe("");
 
     await page.goto(url);
@@ -91,7 +91,7 @@ test("empty stdin gives a page without links", async ({ page }) => {
 // unless the program escapes it (the `&` and `<2>` of the fixed list happen to survive unescaped).
 test("markup and entities in a link show exactly as given", async ({ page }) => {
   const nasty = `https://d.example/?q="x"&amp;<b>y</b>'`;
-  await withPage(`${nasty}\n`, async (url, run) => {
+  await withPage(`${nasty}\n`, [], async (url, run) => {
     expect(run.stdout).toBe(`${nasty}\n`);
 
     await page.goto(url);
@@ -103,16 +103,12 @@ test("markup and entities in a link show exactly as given", async ({ page }) => 
 
 test("--sort lists the links sorted in the page and in the console", async ({ page }) => {
   const sorted = ["Zed", "https://a.example/", "rel/b.html"];
-  await withPage(
-    "rel/b.html\nZed\nhttps://a.example/\nrel/b.html\n",
-    async (url, run) => {
-      expect(run.stdout).toBe(`${sorted.join("\n")}\n`);
+  await withPage("rel/b.html\nZed\nhttps://a.example/\nrel/b.html\n", ["--sort"], async (url, run) => {
+    expect(run.stdout).toBe(`${sorted.join("\n")}\n`);
 
-      await page.goto(url);
-      const anchors = page.locator("a");
-      await expect(anchors).toHaveCount(3);
-      expect(await anchors.evaluateAll((els) => els.map((e) => e.getAttribute("href")))).toEqual(sorted);
-    },
-    ["--sort"],
-  );
+    await page.goto(url);
+    const anchors = page.locator("a");
+    await expect(anchors).toHaveCount(3);
+    expect(await anchors.evaluateAll((els) => els.map((e) => e.getAttribute("href")))).toEqual(sorted);
+  });
 });

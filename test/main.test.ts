@@ -132,7 +132,7 @@ test("without --sort the links stay in input order", async () => {
   assert.deepEqual(liHrefs(f.written["links.html"]), ["b", "a", "B"]);
 });
 
-test("--sort first, last, between and twice gives the same result and page name", async () => {
+test("--sort before, after and twice gives the same result and page name, and a second page name is ignored", async () => {
   for (const argv of [
     ["--sort", "out.html"],
     ["out.html", "--sort"],
@@ -182,7 +182,7 @@ test("an unknown option after --sort and a page name is still rejected", async (
 
 test("control characters in an unknown option do not reach stderr", async () => {
   const f = fakes("a\n");
-  assert.equal(await f.run([`--x\u001b[31m`]), 2);
+  assert.equal(await f.run([`--x\n\u001b[31m`]), 2);
   assert.equal(f.err, "error: unknown option: --x [31m (only --sort is supported)\n");
   assert.equal(f.err.trimEnd().split("\n").length, 1);
   assert.ok(!/[\p{Cc}\p{Zl}\p{Zp}]/u.test(f.err.trimEnd()));

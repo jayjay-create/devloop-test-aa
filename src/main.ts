@@ -40,6 +40,7 @@ export async function main(
     return 1;
   }
   const distinctLinks = distinct(parseLinks(input));
+  // The default sort compares UTF-16 code units: uppercase before lowercase, the same on every machine (not localeCompare).
   const links = sort ? [...distinctLinks].sort() : distinctLinks;
   const text = consoleText(links);
   if (text !== "") stdout.write(`${text}\n`);
