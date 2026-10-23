@@ -34,7 +34,7 @@ test("renderPage escapes href and text", () => {
   const page = renderPage(['a&b"<c']);
   assert.ok(page.includes('href="a&amp;b&quot;&lt;c"'));
   assert.ok(page.includes('>a&amp;b&quot;&lt;c</a>'));
-  assert.ok(!page.includes('&quot;<c'));
+  assert.ok(!page.includes("<c"));
 });
 
 test("escapeHtml escapes & < > \" '", () => {
