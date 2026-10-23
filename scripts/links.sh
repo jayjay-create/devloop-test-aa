@@ -5,6 +5,7 @@
 
 # Names are printed with printf '%s', never echo: some shells' echo expands backslash sequences, so a
 # name spelled \033[2J would reach the terminal as a real escape sequence.
+
 # A file name is user input: control characters (ESC, newline and the like) are dropped before it
 # is printed. `tr` follows the locale: in a UTF-8 locale the 8-bit C1 controls may survive, so this
 # is a guard against the common escape sequences and not a complete filter.
