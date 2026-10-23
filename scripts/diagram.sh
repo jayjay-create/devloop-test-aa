@@ -26,7 +26,15 @@ fi
 # failed render leaves the committed SVG as it was. mmdc wants the output name to end in .svg, and POSIX
 # mktemp has no suffix, so the file lives in a temp directory. That directory sits next to the target:
 # the final mv is then a rename on one filesystem and cannot leave a half-copied SVG behind.
-tmpdir="$(mktemp -d "$docs/.diagram.XXXXXX")" || exit 1
+if [ -d "$target" ]; then
+  echo "error: docs/links.svg is a directory" >&2
+  exit 1
+fi
+
+tmpdir="$(mktemp -d "$docs/.diagram.XXXXXX")" || {
+  echo "error: cannot create a temp directory in docs/" >&2
+  exit 1
+}
 tmp="$tmpdir/links.svg"
 trap 'rm -rf "$tmpdir"' EXIT
 trap 'exit 1' HUP INT TERM
