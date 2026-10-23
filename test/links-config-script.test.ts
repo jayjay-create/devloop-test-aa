@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
-import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,7 +38,10 @@ type Outcome = Result & {
   npmArgs: string[] | undefined;
   yqCalled: boolean;
   yqArgs: string[] | undefined;
+  // The project root the run used; it is removed when runScript returns, so only its name is of use.
   dir: string;
+  // Files the script left in its TMPDIR.
+  tmpLeft: string[];
 };
 
 // One argument per line; undefined = the stub never ran.
@@ -56,6 +59,7 @@ async function runScript(s: Setup): Promise<Outcome> {
     await mkdir(join(dir, "scripts"));
     await mkdir(join(dir, "bin"));
     await mkdir(join(dir, "elsewhere"));
+    await mkdir(join(dir, "tmp"));
     await copyFile(script, join(dir, "scripts", "links-config.sh"));
     if (s.config !== undefined) await writeFile(join(dir, "links.config.yaml"), s.config);
     for (const tool of ["dirname", "tr", "mktemp", "cat", "rm"]) {
@@ -76,6 +80,7 @@ async function runScript(s: Setup): Promise<Outcome> {
     }
     const env = {
       PATH: join(dir, "bin"),
+      TMPDIR: join(dir, "tmp"),
       YQ_OUT: s.yq?.out ?? "",
       YQ_ERR: s.yq?.err ?? "",
       YQ_CODE: String(s.yq?.code ?? 0),
@@ -117,6 +122,7 @@ async function runScript(s: Setup): Promise<Outcome> {
       yqCalled: yqArgs !== undefined,
       yqArgs,
       dir,
+      tmpLeft: await readdir(join(dir, "tmp")),
     };
   } finally {
     clearTimeout(timer);
@@ -186,7 +192,8 @@ test("a failing yq is an error and no run, even when it printed a valid value", 
     args: page,
   });
   assert.equal(r.code, 1, r.stderr);
-  assert.ok(r.stderr.includes("yq failed on links.config.yaml (exit 1): Error: bad file"), r.stderr);
+  assert.ok(r.stderr.includes("yq failed on links.config.yaml (exit 1): Error: bad file\n"), r.stderr);
+  assert.ok(!r.stderr.includes("true"), r.stderr);
   assert.equal(r.npmArgs, undefined);
 });
 
@@ -202,11 +209,45 @@ test("yq is asked for .sort of links.config.yaml in the project root", async () 
   assert.deepEqual(r.yqArgs, [".sort", join(r.dir, "links.config.yaml")]);
 });
 
-test("arguments with spaces stay single arguments and the exit code of npm is passed on", async () => {
+test("arguments with spaces stay single arguments, with and without --sort", async () => {
   const args = ["my page.html", "out page.html"];
-  const r = await runScript({ config: "sort: false\n", yq: { out: "false" }, args, npmCode: 3 });
+  const unsorted = await runScript({ config: "sort: false\n", yq: { out: "false" }, args });
+  assert.equal(unsorted.code, 0, unsorted.stderr);
+  assert.deepEqual(unsorted.npmArgs, ["run", "links", "--", ...args]);
+  const sorted = await runScript({ config: "sort: true\n", yq: { out: "true" }, args });
+  assert.equal(sorted.code, 0, sorted.stderr);
+  assert.deepEqual(sorted.npmArgs, ["run", "links", "--", "--sort", ...args]);
+});
+
+test("the exit code of npm run links is passed on", async () => {
+  const r = await runScript({ config: "sort: false\n", yq: { out: "false" }, args: page, npmCode: 3 });
   assert.equal(r.code, 3, r.stderr);
-  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...args]);
+});
+
+test("a failing yq without a message shows its output instead", async () => {
+  const r = await runScript({ config: "sort: [\n", yq: { out: "garbled", code: 2 }, args: page });
+  assert.equal(r.code, 1, r.stderr);
+  assert.ok(r.stderr.includes("yq failed on links.config.yaml (exit 2): garbled"), r.stderr);
+});
+
+test("a control character in the message of a failing yq is not printed raw", async () => {
+  const r = await runScript({
+    config: "sort: [\n",
+    yq: { out: "", code: 1, err: "bad\u001b[2J file\nsecond line" },
+    args: page,
+  });
+  assert.equal(r.code, 1, r.stderr);
+  assert.ok(!r.stderr.includes("\u001b"), JSON.stringify(r.stderr));
+  assert.ok(r.stderr.includes("(exit 1): bad[2J filesecond line"), JSON.stringify(r.stderr));
+  assert.equal(r.stderr.split("\n").length, 2, JSON.stringify(r.stderr));
+});
+
+test("the temporary file for yq's messages is removed on every way out", async () => {
+  const ok = await runScript({ config: "sort: true\n", yq: { out: "true", err: "warning" }, args: page });
+  const invalid = await runScript({ config: "sort: x\n", yq: { out: "x" }, args: page });
+  const failing = await runScript({ config: "sort: [\n", yq: { out: "", code: 1, err: "bad" }, args: page });
+  assert.deepEqual([ok.code, invalid.code, failing.code], [0, 1, 1]);
+  assert.deepEqual([ok.tmpLeft, invalid.tmpLeft, failing.tmpLeft], [[], [], []]);
 });
 
 test("an explicit --sort with sort: false is passed on", async () => {

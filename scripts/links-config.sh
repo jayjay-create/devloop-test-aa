@@ -27,9 +27,18 @@ if [ -f "$config" ]; then
   fi
   # yq's stderr goes to a file of its own: a warning from a yq that succeeded must not become part of
   # the value. No pipe either: a pipe would hide the exit code of yq (POSIX sh has no pipefail).
-  errfile="$(mktemp)" || exit 1
+  # The traps stand before the file exists, so no signal can find it without them; a signal ends the
+  # run with 128 plus its number, and the EXIT trap removes the file.
+  errfile=""
   trap 'rm -f "$errfile"' EXIT
-  trap 'exit 1' HUP INT TERM
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  # An explicit template: a bare mktemp ignores TMPDIR on macOS.
+  errfile="$(mktemp "${TMPDIR:-/tmp}/links-config.XXXXXX")" || {
+    echo "error: cannot create a temporary file to read yq's messages (check TMPDIR)" >&2
+    exit 1
+  }
   value="$(yq '.sort' "$config" 2>"$errfile")"
   status=$?
   detail="$(cat "$errfile")"
