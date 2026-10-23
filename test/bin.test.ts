@@ -17,25 +17,35 @@ test("a reader that closes stdout early does not crash the program or lose the p
   const page = join(dir, "out.html");
   // The program is started the way a user starts it: Node strips the TypeScript types itself.
   const child = spawn(process.execPath, [bin, page], { stdio: ["pipe", "pipe", "pipe"] });
+  const closed = new Promise<number | null>((resolve) => child.on("close", resolve));
+  let timer: NodeJS.Timeout | undefined;
   try {
     let err = "";
-    child.stderr.on("data", (d: Buffer) => (err += d));
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (d: string) => (err += d));
     child.stdout.once("data", () => child.stdout.destroy()); // like `| head -1`
-    // The program may exit before it has read all of stdin; that failure is not what this test is about.
-    child.stdin.on("error", (e: NodeJS.ErrnoException) => {
-      if (e.code !== "EPIPE") throw e;
-    });
+    // The program may exit before it has read all of stdin; that is not what this test is about,
+    // so a failed stdin write is kept and asserted below instead of thrown from the listener.
+    let stdinError: NodeJS.ErrnoException | undefined;
+    child.stdin.on("error", (e: NodeJS.ErrnoException) => (stdinError = e));
     child.stdin.end(Array.from({ length: LINK_COUNT }, (_, i) => `https://example.org/${i}\n`).join(""));
-    const code = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`program still running after ${TIMEOUT_MS} ms`)), TIMEOUT_MS);
-      child.on("error", reject);
-      child.on("close", (c) => (clearTimeout(timer), resolve(c)));
-    });
+    const code = await Promise.race([
+      closed,
+      new Promise<never>((_, reject) => {
+        child.on("error", reject);
+        timer = setTimeout(() => reject(new Error(`program still running after ${TIMEOUT_MS} ms; stderr: ${err}`)), TIMEOUT_MS);
+      }),
+    ]);
     assert.equal(err, "");
     assert.equal(code, 0);
+    assert.ok(stdinError === undefined || stdinError.code === "EPIPE", String(stdinError));
     assert.ok((await readFile(page, "utf8")).includes(`<a href="https://example.org/${LINK_COUNT - 1}">`));
   } finally {
-    child.kill();
+    clearTimeout(timer);
+    if (child.exitCode === null) {
+      child.kill("SIGKILL");
+      await closed;
+    }
     await rm(dir, { recursive: true, force: true });
   }
 });
