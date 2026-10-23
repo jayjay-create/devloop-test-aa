@@ -33,7 +33,10 @@ test("a reader that closes stdout early does not crash the program or lose the p
       closed,
       new Promise<never>((_, reject) => {
         child.on("error", reject);
-        timer = setTimeout(() => reject(new Error(`program still running after ${TIMEOUT_MS} ms; stderr: ${err}`)), TIMEOUT_MS);
+        timer = setTimeout(
+          () => reject(new Error(`program still running after ${TIMEOUT_MS} ms; stderr: ${err}`)),
+          TIMEOUT_MS,
+        );
       }),
     ]);
     assert.equal(err, "");
