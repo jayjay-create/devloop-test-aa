@@ -8,9 +8,10 @@ async function readAll(stdin: AsyncIterable<string | Uint8Array>): Promise<strin
   return Buffer.concat(chunks).toString("utf8");
 }
 
-// Error output is one line of plain text: a caller reading stderr line by line sees one error,
-// and a path or OS message cannot inject terminal escape sequences or extra lines.
-function describe(e: unknown): string {
+// Error output is one line: control characters (ESC, BEL, newlines, C1, U+2028/2029) in a path or an
+// OS message become spaces, so they cannot start a terminal escape sequence or a second line.
+// Printable bidi and zero-width characters are left alone.
+function sanitizeForStderr(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   return msg.replaceAll(/[\p{Cc}\p{Zl}\p{Zp}]+/gu, " ");
 }
@@ -26,7 +27,7 @@ export async function main(
   try {
     input = await readAll(stdin);
   } catch (e) {
-    stderr.write(`error: cannot read stdin: ${describe(e)}\n`);
+    stderr.write(`error: cannot read stdin: ${sanitizeForStderr(e)}\n`);
     return 1;
   }
   const links = distinct(parseLinks(input));
@@ -36,7 +37,7 @@ export async function main(
   try {
     await writeFile(target, renderPage(links));
   } catch (e) {
-    stderr.write(`error: cannot write ${describe(target)}: ${describe(e)}\n`);
+    stderr.write(`error: cannot write ${sanitizeForStderr(target)}: ${sanitizeForStderr(e)}\n`);
     return 1;
   }
   return 0;

@@ -54,7 +54,7 @@ test("control characters in an error message do not reach stderr", async () => {
   const f = fakes("a\n", async () => { throw new Error("bad\u001b]0;title\u0007path" + String.fromCharCode(0x2028) + "x"); });
   assert.notEqual(await f.run([]), 0);
   assert.ok(!/[\p{Cc}\p{Zl}\p{Zp}]/u.test(f.err.trimEnd()));
-  assert.ok(f.err.includes("path"));
+  assert.equal(f.err, "error: cannot write links.html: bad ]0;title path x\n");
 });
 
 test("control characters in the output path do not reach stderr", async () => {
