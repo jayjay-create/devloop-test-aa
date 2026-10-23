@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
-import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,8 @@ type Result = { code: number | null; stdout: string; stderr: string };
 
 // Runs the script as a process with `sh` by absolute path, so a PATH without sh still works.
 async function run(args: string[], env: NodeJS.ProcessEnv = process.env, cwd?: string): Promise<Result> {
-  const child = spawn("/bin/sh", [script, ...args], { env, cwd, stdio: ["ignore", "pipe", "pipe"] });
+  // detached: the script gets its own process group, so a timeout can end node and htmlq with it.
+  const child = spawn("/bin/sh", [script, ...args], { env, cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
   const closed = new Promise<number | null>((resolve) => child.on("close", resolve));
   let timer: NodeJS.Timeout | undefined;
   try {
@@ -54,7 +55,11 @@ async function run(args: string[], env: NodeJS.ProcessEnv = process.env, cwd?: s
   } finally {
     clearTimeout(timer);
     if (child.exitCode === null && child.signalCode === null) {
-      child.kill("SIGKILL");
+      try {
+        process.kill(-(child.pid as number), "SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
       await closed;
     }
   }
@@ -95,9 +100,11 @@ test("an HTML file path with spaces works", { skip: skipNoHtmlq }, async () => {
   try {
     const input = join(dir, "my page.html");
     await symlink(sample, input);
-    const r = await run([input, join(dir, "out page.html")]);
+    const page = join(dir, "out page.html");
+    const r = await run([input, page]);
     assert.equal(r.code, 0, r.stderr);
     assert.equal(r.stdout, `${expectedLinks.join("\n")}\n`);
+    assert.equal((await readFile(page, "utf8")).match(/<a /g)?.length, expectedLinks.length);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -115,8 +122,7 @@ test("htmlq missing from the PATH: exit non-zero and the message names htmlq", a
   try {
     await symlink(process.execPath, join(dir, "node"));
     const r = await run([sample, join(dir, "out.html")], { ...process.env, PATH: dir });
-    assert.notEqual(r.code, 0, r.stderr);
-    assert.notEqual(r.code, 2);
+    assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /htmlq/);
     assert.match(r.stderr, /install/);
     assert.equal(r.stdout, "");
@@ -125,15 +131,48 @@ test("htmlq missing from the PATH: exit non-zero and the message names htmlq", a
   }
 });
 
-test("an unreadable input file fails non-zero and writes no page", { skip: skipNoHtmlq }, async () => {
+test("a missing input file fails with exit code 1 and writes no page", { skip: skipNoHtmlq }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "links-script-"));
   try {
     const page = join(dir, "out.html");
     const r = await run([join(dir, "missing.html"), page]);
-    assert.notEqual(r.code, 0, r.stderr);
+    assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /missing\.html/);
     assert.equal(r.stdout, "");
     await assert.rejects(readFile(page, "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+// Not for root: root reads files whatever their mode.
+const skipRoot = process.getuid?.() === 0 ? "running as root" : skipNoHtmlq;
+test("an input file without read permission fails with exit code 1 and writes no page", {
+  skip: skipRoot,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "links-script-"));
+  try {
+    const input = join(dir, "locked.html");
+    await copyFile(sample, input);
+    await chmod(input, 0o000);
+    const page = join(dir, "out.html");
+    const r = await run([input, page]);
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stderr, /locked\.html/);
+    assert.equal(r.stdout, "");
+    await assert.rejects(readFile(page, "utf8"), { code: "ENOENT" });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("control characters in the input file name do not reach stderr", { skip: skipNoHtmlq }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "links-script-"));
+  try {
+    const r = await run([join(dir, "bad\u001b[31mname.html")]);
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stderr, /badname\.html|bad\[31mname\.html/);
+    assert.ok(!/[\p{Cc}]/u.test(r.stderr.trimEnd()));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

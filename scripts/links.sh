@@ -8,13 +8,18 @@ if [ $# -lt 1 ]; then
   exit 2
 fi
 
+# A file name is user input: control characters (ESC and the like) are dropped before it is printed.
+printable() {
+  printf '%s' "$1" | tr -d '[:cntrl:]'
+}
+
 if ! command -v htmlq >/dev/null 2>&1; then
   echo "error: htmlq is not installed or not on the PATH (install it, for example: brew install htmlq)" >&2
   exit 1
 fi
 
 if [ ! -f "$1" ] || [ ! -r "$1" ]; then
-  echo "error: cannot read HTML file: $1" >&2
+  echo "error: cannot read HTML file: $(printable "$1")" >&2
   exit 1
 fi
 
@@ -27,7 +32,7 @@ trap 'rm -f "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM
 
 if ! htmlq --attribute href 'a[href]' < "$1" > "$tmp"; then
-  echo "error: htmlq failed on: $1" >&2
+  echo "error: htmlq failed on: $(printable "$1")" >&2
   exit 1
 fi
 
