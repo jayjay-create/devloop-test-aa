@@ -93,7 +93,7 @@ This writes the same page as the `page.html` of Call 1.
 
 ## Exit codes and messages
 
-Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops control characters from the file name it prints; in a UTF-8 locale some 8-bit control characters may survive that filter. `src/main.ts` (the program that `src/bin.ts` starts) replaces each run of control characters, U+2028 and U+2029 in a name or system message with one space.
+Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops control characters from the file name it prints; in a UTF-8 locale some 8-bit control characters may survive that filter. `src/main.ts` replaces every run of one or more control characters (tab, newline and the 8-bit range included) or U+2028/U+2029, in any mix, in a name or system message with a single space. `src/bin.ts` only starts that program.
 
 | Exit | Message | Cause |
 |---|---|---|
