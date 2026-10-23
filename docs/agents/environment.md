@@ -8,12 +8,14 @@ Node 25 runs the TypeScript files directly (type stripping): no build and no run
 - Checks: `make check` runs format, lint, types, unit tests, the end-to-end test and the secrets scan (needs gitleaks, `brew install gitleaks`); `make fmt-write` rewrites the files to Biome's format; `make scan-deps` runs `npm audit` (needs the network).
 - Program: `printf 'a\nb\na\n' | node src/bin.ts [out.html]` prints the distinct links and writes the page (default `links.html` in the current directory).
 - Links from an HTML file: `npm run links -- page.html [out.html]` (`scripts/links.sh`) extracts the `href` of every `a` element with htmlq, prints the distinct links and writes the page (default `links.html` in the current directory). htmlq must be installed (`brew install htmlq`); the script tests in `test/links-script.test.ts` are skipped where it is missing.
+- Diagram: `npm run diagram` (`scripts/diagram.sh`) renders `docs/links.mmd` into `docs/links.svg` with `mmdc` from the PATH (`npm install -g @mermaid-js/mermaid-cli`; it fetches a headless browser into `~/.cache/puppeteer` on first use). `mmdc` is not a project package and not part of `make check`; the script tests in `test/diagram-script.test.ts` use stubs and pass without it.
 - `make services-up` says nothing has to run and does nothing.
 
 ## Installed outside the project
 
 - `brew install htmlq` installed into `/opt/homebrew/bin` (htmlq 0.4.0, run by the person).
 - `brew install gitleaks 2>& 1` installed into /opt/homebrew/bin
+- `npm install -g @mermaid-js/mermaid-cli 2>& 1` installed into /opt/homebrew/bin
 
 ## Install permission
 
