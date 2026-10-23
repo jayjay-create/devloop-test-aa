@@ -17,3 +17,9 @@ install-answered: 2026-10-23
 
 dependency-tools: no
 dependency-answered: 2026-10-23
+
+## Unattended mode
+
+unattended-mode: no
+unattended-reason: the person said no to work running alone in this project
+unattended-answered: 2026-10-23
