@@ -57,6 +57,13 @@ test("control characters in an error message do not reach stderr", async () => {
   assert.ok(f.err.includes("path"));
 });
 
+test("control characters in the output path do not reach stderr", async () => {
+  const f = fakes("a\n", async () => { throw new Error("denied"); });
+  assert.notEqual(await f.run(["dir\u001b[31m/out.html"]), 0);
+  assert.ok(!/[\p{Cc}\p{Zl}\p{Zp}]/u.test(f.err.trimEnd()));
+  assert.ok(f.err.includes("out.html"));
+});
+
 test("argv[0] is the output path", async () => {
   const f = fakes("a\n");
   assert.equal(await f.run(["out.html"]), 0);
