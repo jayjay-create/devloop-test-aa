@@ -61,3 +61,21 @@ test("empty stdin gives a page without links", async ({ page }) => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// Beyond the fixed list: markup-like and entity-like text that a browser would NOT show as given
+// unless the program escapes it (the `&` and `<2>` of the fixed list happen to survive unescaped).
+test("markup and entities in a link show exactly as given", async ({ page }) => {
+  const nasty = `https://d.example/?q="x"&amp;<b>y</b>'`;
+  const dir = await mkdtemp(join(tmpdir(), "links-e2e-"));
+  try {
+    const out = join(dir, "out.html");
+    await runProgram(out, `${nasty}\n`);
+
+    await page.goto(`file://${out}`);
+    await expect(page.locator("a")).toHaveCount(1);
+    expect(await page.locator("a").getAttribute("href")).toBe(nasty);
+    expect(await page.locator("a").textContent()).toBe(nasty);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
