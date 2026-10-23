@@ -8,9 +8,16 @@ if [ $# -lt 1 ]; then
   exit 2
 fi
 
-# A file name is user input: control characters (ESC and the like) are dropped before it is printed.
+# A file name is user input: control characters (ESC, newline and the like) are dropped before it
+# is printed. `tr` follows the locale: in a UTF-8 locale the 8-bit C1 controls may survive, so this
+# is a guard against the common escape sequences and not a complete filter.
 printable() {
-  printf '%s' "$1" | tr -d '[:cntrl:]'
+  name="$(printf '%s' "$1" | tr -d '[:cntrl:]')"
+  if [ -n "$name" ]; then
+    printf '%s' "$name"
+  else
+    printf '%s' "(name without printable characters)"
+  fi
 }
 
 if ! command -v htmlq >/dev/null 2>&1; then

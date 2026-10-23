@@ -171,9 +171,17 @@ test("control characters in the input file name do not reach stderr", { skip: sk
   try {
     const r = await run([join(dir, "bad\u001b[31mname.html")]);
     assert.equal(r.code, 1, r.stderr);
-    assert.match(r.stderr, /badname\.html|bad\[31mname\.html/);
+    assert.match(r.stderr, /cannot read HTML file: .*bad\[31mname\.html$/m);
     assert.ok(!/[\p{Cc}]/u.test(r.stderr.trimEnd()));
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("a file name made only of control characters is reported without them", { skip: skipNoHtmlq }, async () => {
+  for (const name of ["\u001b", "\n\r"]) {
+    const r = await run([name]);
+    assert.equal(r.code, 1, r.stderr);
+    assert.equal(r.stderr, "error: cannot read HTML file: (name without printable characters)\n");
   }
 });
