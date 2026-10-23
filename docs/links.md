@@ -13,7 +13,7 @@ The links program takes links, prints each distinct link once, and writes them a
 
 Both calls do the same after the links are known:
 
-- The distinct links are printed to stdout first, in input order, one per line.
+- The distinct links are printed to stdout first, in input order, or sorted by character code (UTF-16 code units, so uppercase before lowercase) with `--sort`, one per line.
 - Then the page is written. The output page defaults to `links.html` in the current directory; pass an output page to write somewhere else.
 
 ## Call 1: from an HTML file
@@ -69,7 +69,7 @@ The written page holds:
 Run from the repository root:
 
 ```
-node src/bin.ts [<output-page>]
+node src/bin.ts [--sort] [<output-page>]
 ```
 
 The input is one link per line (a trailing `\r` is dropped, empty lines are skipped). Example:
@@ -91,6 +91,15 @@ https://example.org/b?x=1&y=2
 
 This writes the same page as the `page.html` of Call 1.
 
+With `--sort` the links are printed and written sorted. `--sort` may stand anywhere among the arguments; giving it twice is harmless. Any other argument starting with `--` is an error, so a file name starting with `--` needs `./` in front (`./--name.html`).
+
+```
+$ printf 'b\na\nb\nB\n' | node src/bin.ts --sort out.html
+B
+a
+b
+```
+
 ## Exit codes and messages
 
 Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops control characters from the file name it prints; in a UTF-8 locale some 8-bit control characters may survive that filter. `src/main.ts` replaces every run of one or more control characters (tab, newline and the 8-bit range included) or U+2028/U+2029, in any mix, in a name or system message with a single space. `src/bin.ts` only starts that program.
@@ -103,6 +112,7 @@ Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops 
 | 1 | `error: htmlq failed on: <name>` | `scripts/links.sh`: htmlq exited with an error on the file. |
 | 1 | `error: cannot read stdin: <os message>` | `src/main.ts`: reading stdin failed. |
 | 1 | `error: cannot write <target>: <os message>` | `src/main.ts`: the output page could not be written. |
+| 2 | `error: unknown option: <arg> (only --sort is supported)` | `src/main.ts`: an argument starting with `--` other than `--sort`. |
 | 2 | `usage: npm run links -- <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
 
 Examples:
@@ -122,6 +132,10 @@ error: htmlq failed on: test/sample.html
 
 $ sh scripts/links.sh
 usage: npm run links -- <html-file> [<output-page>]
+# exit 2
+
+$ node src/bin.ts --foo < /dev/null
+error: unknown option: --foo (only --sort is supported)
 # exit 2
 
 $ node src/bin.ts /nonexistent-dir/x.html < /dev/null
