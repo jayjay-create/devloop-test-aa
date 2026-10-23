@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,14 +39,13 @@ async function run(scriptPath: string, args: string[], env: NodeJS.ProcessEnv): 
     return { code, stdout, stderr };
   } finally {
     clearTimeout(timer);
-    if (child.exitCode === null && child.signalCode === null) {
-      try {
-        process.kill(-(child.pid as number), "SIGKILL");
-      } catch {
-        child.kill("SIGKILL");
-      }
-      await closed;
+    // Always the whole group: a grandchild (a stub mmdc) can outlive the shell and hold the pipes open.
+    try {
+      process.kill(-(child.pid as number), "SIGKILL");
+    } catch {
+      // the group is already gone
     }
+    await closed;
   }
 }
 
@@ -71,49 +70,113 @@ async function stubMmdc(stubs: string, body: string): Promise<void> {
   await chmod(file, 0o755);
 }
 
-// The stub writes to the file after `-o`, as mmdc does, and like mmdc refuses an output name not ending in .svg.
-const writeStub = `while [ $# -gt 0 ]; do [ "$1" = "-o" ] && out="$2"; shift; done
+// The stub logs "<input> <output>" to $STUB_LOG, fails if the input is not an existing file, writes to the file after
+// `-o` as mmdc does, and like mmdc refuses an output name not ending in .svg.
+const writeStub = `while [ $# -gt 0 ]; do
+  [ "$1" = "-i" ] && in="$2"
+  [ "$1" = "-o" ] && out="$2"
+  shift
+done
+[ -f "$in" ] || { echo "input is not a file: $in" >&2; exit 5; }
 case "$out" in *.svg) ;; *) echo "output must end in .svg" >&2; exit 4 ;; esac
+printf '%s %s\\n' "$in" "$out" >> "$STUB_LOG"
 printf 'stub svg' > "$out"`;
 
+function envWith(stubs: string, log: string, path = `${stubs}:${SYSTEM_PATH}`): NodeJS.ProcessEnv {
+  return { ...process.env, PATH: path, STUB_LOG: log };
+}
+
+// The script keeps its temp directory next to the target and removes it again.
+async function leftovers(dir: string): Promise<string[]> {
+  return (await readdir(join(dir, "docs"))).filter((name) => name.startsWith(".diagram."));
+}
+
 test("a PATH without mmdc: exit 1 and stderr begins with the install message", async () => {
-  await withSandbox(async (dir, stubs) => {
-    const r = await run(join(dir, "scripts", "diagram.sh"), [], { ...process.env, PATH: stubs });
+  await withSandbox(async (dir, stubs, svg) => {
+    const before = await readFile(svg);
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log"), stubs));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: mmdc is not installed/);
     assert.equal(r.stdout, "");
+    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
   });
 });
 
-test("any argument: exit 2 and the usage line", async () => {
-  await withSandbox(async (dir, stubs) => {
+test("any argument: exit 2, the usage line, mmdc is not run", async () => {
+  await withSandbox(async (dir, stubs, svg) => {
     await stubMmdc(stubs, writeStub);
-    const r = await run(join(dir, "scripts", "diagram.sh"), ["extra"], {
-      ...process.env,
-      PATH: `${stubs}:${SYSTEM_PATH}`,
-    });
-    assert.equal(r.code, 2, r.stderr);
-    assert.match(r.stderr, /^usage: npm run diagram$/m);
+    const before = await readFile(svg);
+    for (const args of [["extra"], ["a", "b"], [""]]) {
+      const r = await run(join(dir, "scripts", "diagram.sh"), args, envWith(stubs, join(dir, "log")));
+      assert.equal(r.code, 2, r.stderr);
+      assert.match(r.stderr, /^usage: npm run diagram$/m);
+      assert.equal(r.stdout, "");
+    }
+    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
+    await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
   });
 });
 
 test("a stub mmdc that writes a file and exits 0: exit 0 and docs/links.svg holds its output", async () => {
   await withSandbox(async (dir, stubs, svg) => {
     await stubMmdc(stubs, writeStub);
-    const r = await run(join(dir, "scripts", "diagram.sh"), [], { ...process.env, PATH: `${stubs}:${SYSTEM_PATH}` });
+    const log = join(dir, "log");
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, log));
     assert.equal(r.code, 0, r.stderr);
     assert.equal(await readFile(svg, "utf8"), "stub svg");
+    assert.equal(r.stdout, "");
+    const [input, output] = (await readFile(log, "utf8")).trim().split(" ");
+    assert.match(input, /docs\/links\.mmd$/);
+    assert.match(output, /\/links\.svg$/);
+    assert.deepEqual(await leftovers(dir), []);
   });
 });
 
-test("a stub mmdc that exits non-zero: exit 1 and the existing docs/links.svg is unchanged", async () => {
+test("a stub mmdc that exits non-zero after writing: exit 1 and the existing docs/links.svg is unchanged", async () => {
   await withSandbox(async (dir, stubs, svg) => {
     const before = Buffer.from([0x3c, 0x73, 0x76, 0x67, 0x3e, 0x00, 0xff, 0x0a]);
     await writeFile(svg, before);
     await stubMmdc(stubs, `${writeStub}\nexit 3`);
-    const r = await run(join(dir, "scripts", "diagram.sh"), [], { ...process.env, PATH: `${stubs}:${SYSTEM_PATH}` });
+    const log = join(dir, "log");
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, log));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: mmdc failed rendering docs\/links\.mmd$/m);
+    assert.ok((await readFile(log, "utf8")).includes("/links.svg"), "the stub did not write to the temp output");
     assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
+    assert.deepEqual(await leftovers(dir), []);
+  });
+});
+
+test("a stub mmdc that exits 0 and writes nothing: exit 1 and the existing docs/links.svg is unchanged", async () => {
+  await withSandbox(async (dir, stubs, svg) => {
+    const before = await readFile(svg);
+    await stubMmdc(stubs, `: > /dev/null`);
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stderr, /^error: mmdc wrote no output for docs\/links\.mmd$/m);
+    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
+    assert.deepEqual(await leftovers(dir), []);
+  });
+});
+
+test("a stub mmdc that exits 0 and writes an empty file: exit 1 and the existing docs/links.svg is unchanged", async () => {
+  await withSandbox(async (dir, stubs, svg) => {
+    const before = await readFile(svg);
+    await stubMmdc(stubs, `while [ $# -gt 0 ]; do [ "$1" = "-o" ] && : > "$2"; shift; done`);
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stderr, /^error: mmdc wrote no output for docs\/links\.mmd$/m);
+    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
+    assert.deepEqual(await leftovers(dir), []);
+  });
+});
+
+test("a missing docs/links.mmd: exit 1 and the missing-source message", async () => {
+  await withSandbox(async (dir, stubs) => {
+    await stubMmdc(stubs, writeStub);
+    await rm(join(dir, "docs", "links.mmd"));
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stderr, /^error: docs\/links\.mmd is missing$/m);
   });
 });
