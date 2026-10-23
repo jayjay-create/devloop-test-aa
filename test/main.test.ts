@@ -23,12 +23,22 @@ function fakes(input: string | Buffer[] | AsyncIterable<Buffer>, writeFile = asy
           : Array.isArray(input)
             ? Readable.from(input)
             : input,
-        { write: (s: string) => ((out += s), true) },
+        {
+          write: (s: string) => {
+            out += s;
+            return true;
+          },
+        },
         async (p: string, d: string) => {
           await writeFile(p, d);
           written[p] = d;
         },
-        { write: (s: string) => ((err += s), true) },
+        {
+          write: (s: string) => {
+            err += s;
+            return true;
+          },
+        },
       ),
   };
 }
@@ -52,9 +62,9 @@ test("a multibyte character split across stdin chunks survives", async () => {
 });
 
 test("a failing stdin gives non-zero and one stderr line naming stdin", async () => {
-  const failing = (async function* (): AsyncGenerator<Buffer> {
-    throw new Error("boom\nline two");
-  })();
+  const failing: AsyncIterable<Buffer> = {
+    [Symbol.asyncIterator]: () => ({ next: () => Promise.reject(new Error("boom\nline two")) }),
+  };
   const f = fakes(failing);
   assert.notEqual(await f.run([]), 0);
   assert.equal(f.err.trimEnd().split("\n").length, 1);
@@ -65,7 +75,7 @@ test("a failing stdin gives non-zero and one stderr line naming stdin", async ()
 
 test("control characters in an error message do not reach stderr", async () => {
   const f = fakes("a\n", async () => {
-    throw new Error("bad\u001b]0;title\u0007path" + String.fromCharCode(0x2028) + "x");
+    throw new Error(`bad\u001b]0;title\u0007path${String.fromCharCode(0x2028)}x`);
   });
   assert.notEqual(await f.run([]), 0);
   assert.ok(!/[\p{Cc}\p{Zl}\p{Zp}]/u.test(f.err.trimEnd()));

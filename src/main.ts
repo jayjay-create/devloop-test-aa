@@ -32,7 +32,7 @@ export async function main(
   }
   const links = distinct(parseLinks(input));
   const text = consoleText(links);
-  if (text !== "") stdout.write(text + "\n");
+  if (text !== "") stdout.write(`${text}\n`);
   const target = argv[0] ?? "links.html";
   try {
     await writeFile(target, renderPage(links));
