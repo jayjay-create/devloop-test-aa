@@ -157,6 +157,17 @@ error: cannot write /nonexistent-dir/x.html: ENOENT: no such file or directory, 
 # exit 1
 ```
 
+## Sorting from a settings file
+
+`links.config.yaml` in the project root holds `sort: true` or `sort: false` (shipped: `false`). `npm run links:config -- <html-file> [<output-page>]` reads it with `yq` (Mike Farah's, `brew install yq`) and calls `npm run links` with `--sort` when the value is `true`, without it otherwise. An explicit `--sort` on the command line is passed on and wins over `sort: false`. It works from any working directory.
+
+- Config file missing: runs without `--sort`, and `yq` is not needed.
+- `sort` key missing: runs without `--sort`.
+- Any other value than `true` or `false`: a message naming `links.config.yaml` and `sort` on stderr, exit 1.
+- `yq` missing while the file exists: a message with the hint `brew install yq`, exit 1.
+- `yq` fails (for example broken YAML): its message on stderr, exit 1, no unsorted run.
+- Errors of `npm run links` itself come through unchanged.
+
 ## Regenerating the diagram
 
 The diagram is generated from its source `docs/links.mmd`. Run `npm run diagram` from the repository root. It needs `mmdc` from npm on the PATH (`npm install -g @mermaid-js/mermaid-cli`).
