@@ -8,8 +8,8 @@ async function readAll(stdin: AsyncIterable<string | Uint8Array>): Promise<strin
   return Buffer.concat(chunks).toString("utf8");
 }
 
-// Error output is one line: control characters (ESC, BEL, newlines, C1, U+2028/2029) in a path or an
-// OS message become spaces, so they cannot start a terminal escape sequence or a second line.
+// Error output is one line: every control character (ESC, BEL, tab, newline, the C1 range) and
+// U+2028/2029 in a path or an OS message becomes a space, so they cannot start a terminal escape sequence or a second line.
 // Printable bidi and zero-width characters are left alone.
 function sanitizeForStderr(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
