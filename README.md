@@ -1,2 +1,3 @@
 # devloop-test-aa
-The links program (links from an HTML file or stdin, written as a page): [docs/links.md](docs/links.md)
+
+The links program prints each distinct link once and writes them as an HTML page, from an HTML file or from stdin: [docs/links.md](docs/links.md)

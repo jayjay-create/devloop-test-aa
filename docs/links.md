@@ -4,8 +4,6 @@ The links program takes links, prints each distinct link once, and writes them a
 
 ![Path from an HTML file through htmlq and the program to the written page](links.svg)
 
-To regenerate the diagram from its source `docs/links.mmd`, run `npm run diagram` from the repository root. It needs `mmdc` from npm on the PATH (`npm install -g @mermaid-js/mermaid-cli`, see `docs/agents/environment.md`).
-
 ## Prerequisites
 
 - Node, as given by `engines` in `package.json` (`>=22.18`). There is no build and there are no runtime dependencies.
@@ -16,7 +14,7 @@ To regenerate the diagram from its source `docs/links.mmd`, run `npm run diagram
 Both calls do the same after the links are known:
 
 - The distinct links are printed to stdout first, in input order, one per line.
-- Then the page is written. It defaults to `links.html` in the current directory; pass an output page to write somewhere else.
+- Then the page is written. The output page defaults to `links.html` in the current directory; pass an output page to write somewhere else.
 
 ## Call 1: from an HTML file
 
@@ -26,7 +24,9 @@ Run from the repository root:
 npm run links -- <html-file> [<output-page>]
 ```
 
-The script takes the `href` of every `a` element of the HTML file with htmlq and hands the links to the program. Example with `test/sample.html`:
+The script takes the `href` of every `a` element of the HTML file with htmlq and hands the links to the program. Other attributes, such as the `href` of a `link` element or the `src` of an image, are ignored.
+
+The example uses `test/sample.html`. Its `a` elements point to `https://example.org/a` (twice), `/relative/page` and `https://example.org/b?x=1&amp;y=2`. The `&amp;` in the HTML source is printed as `&`.
 
 ```
 $ npm run links -- test/sample.html
@@ -39,13 +39,13 @@ https://example.org/a
 https://example.org/b?x=1&y=2
 ```
 
-`links.html` is written in the current directory. The link `https://example.org/a` appears twice in the sample and is printed once. With an output page:
+The link that appears twice is printed once. With an output page, the same links are printed and the page is written to that name:
 
 ```
 $ npm run links -- test/sample.html page.html
 ```
 
-prints the same links and writes `page.html`. The written page holds:
+The written page holds:
 
 ```html
 <!doctype html>
@@ -80,39 +80,44 @@ https://example.org/a
 /relative/page
 ```
 
-`links.html` is written in the current directory.
-
 ## Exit codes and messages
 
-Messages go to stderr. In file names and system messages, control characters are dropped or replaced so that an error stays on one line.
+Messages go to stderr. The messages of `scripts/links.sh` print the file name with control characters dropped (the filter is not complete for the 8-bit control characters in a UTF-8 locale); the messages of `src/bin.ts` print names and system messages with every control character replaced by a space. Either way an error stays on one line.
 
 | Exit | Message | Cause |
 |---|---|---|
 | 0 | - | The page was written. |
-| 2 | `usage: npm run links -- <html-file> [<output-page>]` | `scripts/links.sh` was called without an HTML file. |
-| 1 | `error: htmlq is not installed or not on the PATH (install it, for example: brew install htmlq)` | htmlq is not found. |
-| 1 | `error: cannot read HTML file: <name>` | The HTML file does not exist or is not readable. |
-| 1 | `error: htmlq failed on: <name>` | htmlq exited with an error on the file. |
-| 1 | `error: cannot read stdin: <os message>` | Reading stdin failed. |
-| 1 | `error: cannot write <target>: <os message>` | The output page could not be written. |
+| 1 | `error: htmlq is not installed or not on the PATH (install it, for example: brew install htmlq)` | `scripts/links.sh`: htmlq is not found. |
+| 1 | `error: cannot read HTML file: <name>` | `scripts/links.sh`: the HTML file does not exist, is not a regular file or is not readable. |
+| 1 | `error: htmlq failed on: <name>` | `scripts/links.sh`: htmlq exited with an error on the file. |
+| 1 | `error: cannot read stdin: <os message>` | `src/bin.ts`: reading stdin failed. |
+| 1 | `error: cannot write <target>: <os message>` | `src/bin.ts`: the output page could not be written. |
+| 2 | `usage: npm run links -- <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
 
-Examples, run once each:
+Examples:
 
 ```
-$ sh scripts/links.sh test/sample.html      # PATH without htmlq
-error: htmlq is not installed or not on the PATH (install it, for example: brew install htmlq)   (exit 1)
+$ sh scripts/links.sh test/sample.html    # with a PATH that has no htmlq
+error: htmlq is not installed or not on the PATH (install it, for example: brew install htmlq)
+# exit 1
 
 $ sh scripts/links.sh missing.html
-error: cannot read HTML file: missing.html   (exit 1)
+error: cannot read HTML file: missing.html
+# exit 1
 
-$ sh scripts/links.sh test/sample.html      # with an htmlq that exits 3
-error: htmlq failed on: test/sample.html   (exit 1)
+$ sh scripts/links.sh test/sample.html    # with an htmlq that exits 3
+error: htmlq failed on: test/sample.html
+# exit 1
 
 $ sh scripts/links.sh
-usage: npm run links -- <html-file> [<output-page>]   (exit 2)
+usage: npm run links -- <html-file> [<output-page>]
+# exit 2
 
 $ node src/bin.ts /nonexistent-dir/x.html < /dev/null
-error: cannot write /nonexistent-dir/x.html: ENOENT: no such file or directory, open '/nonexistent-dir/x.html'   (exit 1)
+error: cannot write /nonexistent-dir/x.html: ENOENT: no such file or directory, open '/nonexistent-dir/x.html'
+# exit 1
 ```
 
-The exit codes in parentheses are those of the command, not part of its output. The message for an unreadable stdin has no example here.
+## Regenerating the diagram
+
+The diagram is generated from its source `docs/links.mmd`. Run `npm run diagram` from the repository root. It needs `mmdc` from npm on the PATH (`npm install -g @mermaid-js/mermaid-cli`).
