@@ -15,8 +15,8 @@ type Run = { code: number | null; stdout: string; stderr: string };
 
 // Starts the real program the way a user does (Node strips the TypeScript types itself), feeds stdin,
 // waits at most PROGRAM_TIMEOUT_MS and always kills the child.
-function runProgram(outPath: string, stdin: string): Promise<Run> {
-  const child = spawn(process.execPath, [BIN, outPath], { stdio: ["pipe", "pipe", "pipe"] });
+function runProgram(outPath: string, stdin: string, flags: string[] = []): Promise<Run> {
+  const child = spawn(process.execPath, [BIN, ...flags, outPath], { stdio: ["pipe", "pipe", "pipe"] });
   let timer: NodeJS.Timeout | undefined;
   const done = new Promise<Run>((resolve, reject) => {
     let stdout = "";
@@ -48,11 +48,15 @@ function runProgram(outPath: string, stdin: string): Promise<Run> {
 
 // Runs the program on `stdin` into a fresh temp directory, hands the page's URL and the run to `check`,
 // and removes the directory afterwards, whatever `check` does.
-async function withPage(stdin: string, check: (url: string, run: Run) => Promise<void>): Promise<void> {
+async function withPage(
+  stdin: string,
+  check: (url: string, run: Run) => Promise<void>,
+  flags: string[] = [],
+): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), "links-e2e-"));
   try {
     const out = join(dir, "out.html");
-    const run = await runProgram(out, stdin);
+    const run = await runProgram(out, stdin, flags);
     expect(run.code, `exit code, stderr: ${run.stderr}`).toBe(0);
     expect(run.stderr).toBe("");
     await check(pathToFileURL(out).href, run);
@@ -95,4 +99,20 @@ test("markup and entities in a link show exactly as given", async ({ page }) => 
     expect(await page.locator("a").getAttribute("href")).toBe(nasty);
     expect(await page.locator("a").textContent()).toBe(nasty);
   });
+});
+
+test("--sort lists the links sorted in the page and in the console", async ({ page }) => {
+  const sorted = ["Zed", "https://a.example/", "rel/b.html"];
+  await withPage(
+    "rel/b.html\nZed\nhttps://a.example/\nrel/b.html\n",
+    async (url, run) => {
+      expect(run.stdout).toBe(`${sorted.join("\n")}\n`);
+
+      await page.goto(url);
+      const anchors = page.locator("a");
+      await expect(anchors).toHaveCount(3);
+      expect(await anchors.evaluateAll((els) => els.map((e) => e.getAttribute("href")))).toEqual(sorted);
+    },
+    ["--sort"],
+  );
 });

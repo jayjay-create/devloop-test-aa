@@ -23,6 +23,15 @@ export async function main(
   writeFile: (path: string, data: string) => Promise<void>,
   stderr: Writable = process.stderr,
 ): Promise<number> {
+  let sort = false;
+  const positionals: string[] = [];
+  for (const arg of argv) {
+    if (arg === "--sort") sort = true;
+    else if (arg.startsWith("--")) {
+      stderr.write(`error: unknown option: ${sanitizeForStderr(arg)} (only --sort is supported)\n`);
+      return 2;
+    } else positionals.push(arg);
+  }
   let input: string;
   try {
     input = await readAll(stdin);
@@ -30,10 +39,11 @@ export async function main(
     stderr.write(`error: cannot read stdin: ${sanitizeForStderr(e)}\n`);
     return 1;
   }
-  const links = distinct(parseLinks(input));
+  const distinctLinks = distinct(parseLinks(input));
+  const links = sort ? [...distinctLinks].sort() : distinctLinks;
   const text = consoleText(links);
   if (text !== "") stdout.write(`${text}\n`);
-  const target = argv[0] ?? "links.html";
+  const target = positionals[0] ?? "links.html";
   try {
     await writeFile(target, renderPage(links));
   } catch (e) {
