@@ -1,2 +1,3 @@
 .claude/check-attempts.local
 .claude/unattended.local
+node_modules
