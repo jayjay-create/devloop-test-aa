@@ -1,9 +1,9 @@
-.PHONY: check fmt fmt-file fmt-write lint lint-file test-unit test-file test-one test-e2e scan-deps services-up
+.PHONY: check fmt fmt-file fmt-write lint lint-file types test-unit test-file test-one test-e2e scan-deps scan-secrets services-up
 
 BIOME = npx --no-install biome
 
 # Every blocking class in sequence, as listed in docs/agents/checks.md.
-check: fmt lint test-unit test-e2e
+check: fmt lint types test-unit test-e2e scan-secrets
 
 fmt:
 	$(BIOME) format .
@@ -23,6 +23,9 @@ lint-file:
 	@test -n "$(FILE)" || { echo "usage: make lint-file FILE=<path>" >&2; exit 2; }
 	$(BIOME) lint "$(FILE)"
 
+types:
+	npx --no-install tsc -p tsconfig.json
+
 test-unit:
 	npm test
 
@@ -37,6 +40,11 @@ test-one:
 # Needs the WebKit browser: npx playwright install webkit (once per machine).
 test-e2e:
 	npm run test:e2e
+
+# Searches the files of the working tree, then the whole git history, for credentials.
+scan-secrets:
+	gitleaks dir --no-banner --config .gitleaks.toml .
+	gitleaks git --no-banner --config .gitleaks.toml .
 
 # Asks the npm registry, so it is not part of check: an outage there must not stop work here.
 scan-deps:

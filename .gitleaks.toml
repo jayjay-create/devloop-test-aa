@@ -1,0 +1,10 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Directories that are installed or generated, not written by hand"
+paths = [
+  '''node_modules/''',
+  '''test-results/''',
+  '''playwright-report/''',
+]
