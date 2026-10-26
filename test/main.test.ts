@@ -264,7 +264,7 @@ test("--count after --sort or after the page name works the same", async () => {
     assert.equal(f.out, "2\n", argv.join(" "));
     assert.deepEqual(Object.keys(f.written), [key], argv.join(" "));
     const plain = fakes("b\na\nb\n");
-    await plain.run([...plainArgv]);
+    assert.equal(await plain.run([...plainArgv]), 0, plainArgv.join(" "));
     assert.ok(f.written[key], argv.join(" "));
     assert.equal(f.written[key], plain.written[key], argv.join(" "));
   }
