@@ -235,3 +235,32 @@ test("with --count the page is still written, to the named target and to links.h
   assert.deepEqual(Object.keys(def.written), ["links.html"]);
   assert.equal(def.written["links.html"].match(/<li>/g)?.length, 2);
 });
+
+test("--count prints the number alone and the page equals the page written without --count", async () => {
+  const input = "a\nb\na\n";
+  const counted = fakes(input);
+  assert.equal(await counted.run(["--count"]), 0);
+  assert.equal(counted.out, "2\n");
+  const plain = fakes(input);
+  assert.equal(await plain.run([]), 0);
+  assert.equal(counted.written["links.html"], plain.written["links.html"]);
+});
+
+test("--count with exactly one link prints 1", async () => {
+  const f = fakes("only\n");
+  assert.equal(await f.run(["--count"]), 0);
+  assert.equal(f.out, "1\n");
+});
+
+test("--count after --sort or after the page name works the same", async () => {
+  for (const argv of [
+    ["--sort", "--count"],
+    ["out.html", "--count"],
+    ["--sort", "out.html", "--count"],
+  ]) {
+    const f = fakes("b\na\nb\n");
+    assert.equal(await f.run(argv), 0, argv.join(" "));
+    assert.equal(f.out, "2\n", argv.join(" "));
+    assert.deepEqual(Object.keys(f.written), [argv.includes("out.html") ? "out.html" : "links.html"], argv.join(" "));
+  }
+});

@@ -317,8 +317,9 @@ test("--sort alone shows the usage line and exits 2", async () => {
   assert.equal(r.stdout, "");
 });
 
-// A stub node in front of the PATH records the arguments it was called with, one per line; the first is bin.ts, which is dropped.
-async function runWithStubNode(args: string[]): Promise<{ r: Result; nodeArgs: string[] }> {
+// A stub node in front of the PATH records the arguments it was called with, one per line.
+// The first one is the script's bin.ts path; the rest are returned.
+async function runWithStubNode(args: string[]): Promise<string[]> {
   const dir = await mkdtemp(join(tmpdir(), "links-script-"));
   try {
     const record = join(dir, "args.txt");
@@ -332,7 +333,9 @@ async function runWithStubNode(args: string[]): Promise<{ r: Result; nodeArgs: s
       dir,
     );
     assert.equal(r.code, 0, r.stderr);
-    return { r, nodeArgs: (await readFile(record, "utf8")).split("\n").slice(1, -1) };
+    const [bin, ...rest] = (await readFile(record, "utf8")).split("\n").slice(0, -1);
+    assert.ok(bin?.endsWith("src/bin.ts"), `first node argument: ${bin}`);
+    return rest;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -343,8 +346,7 @@ test("--count before or after the HTML file reaches node as an argument", { skip
     ["--count", sample],
     [sample, "--count"],
   ]) {
-    const { nodeArgs } = await runWithStubNode(args);
-    assert.deepEqual(nodeArgs, ["--count"]);
+    assert.deepEqual(await runWithStubNode(args), ["--count"], args.join(" "));
   }
 });
 
@@ -353,19 +355,26 @@ test("--count with an output page: node gets --count and the page", { skip: skip
     ["--count", sample, "page.html"],
     [sample, "page.html", "--count"],
   ]) {
-    const { nodeArgs } = await runWithStubNode(args);
-    assert.deepEqual(nodeArgs, ["--count", "page.html"]);
+    assert.deepEqual(await runWithStubNode(args), ["--count", "page.html"], args.join(" "));
   }
 });
 
 test("--count together with --sort: both reach node", { skip: skipNoHtmlq }, async () => {
-  for (const args of [
-    ["--count", "--sort", sample],
-    [sample, "--sort", "page.html", "--count"],
-  ]) {
-    const { nodeArgs } = await runWithStubNode(args);
-    assert.ok(nodeArgs.includes("--count"), nodeArgs.join(" "));
-    assert.ok(nodeArgs.includes("--sort"), nodeArgs.join(" "));
-    assert.equal(nodeArgs.length, args.includes("page.html") ? 3 : 2);
+  for (const [args, expected] of [
+    [
+      ["--count", "--sort", sample],
+      ["--sort", "--count"],
+    ],
+    [
+      [sample, "--sort", "page.html", "--count"],
+      ["--sort", "--count", "page.html"],
+    ],
+  ] as const) {
+    assert.deepEqual(await runWithStubNode([...args]), expected, args.join(" "));
   }
+});
+
+test("without --count node does not get it", { skip: skipNoHtmlq }, async () => {
+  assert.deepEqual(await runWithStubNode([sample]), []);
+  assert.deepEqual(await runWithStubNode(["--sort", sample]), ["--sort"]);
 });
