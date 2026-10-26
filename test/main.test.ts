@@ -166,7 +166,7 @@ test("an unknown option returns 2 with one stderr line and writes nothing", asyn
   };
   const f = fakes(input);
   assert.equal(await f.run(["--foo"]), 2);
-  assert.equal(f.err, "error: unknown option: --foo (only --sort is supported)\n");
+  assert.equal(f.err, "error: unknown option: --foo (only --sort and --count are supported)\n");
   assert.equal(f.out, "");
   assert.deepEqual(Object.keys(f.written), []);
   assert.equal(read, false);
@@ -183,7 +183,7 @@ test("an unknown option after --sort and a page name is still rejected", async (
 test("control characters in an unknown option do not reach stderr", async () => {
   const f = fakes("a\n");
   assert.equal(await f.run([`--x\n\u001b[31m`]), 2);
-  assert.equal(f.err, "error: unknown option: --x [31m (only --sort is supported)\n");
+  assert.equal(f.err, "error: unknown option: --x [31m (only --sort and --count are supported)\n");
   assert.equal(f.err.trimEnd().split("\n").length, 1);
   assert.ok(!/[\p{Cc}\p{Zl}\p{Zp}]/u.test(f.err.trimEnd()));
   assert.equal(f.out, "");
@@ -195,4 +195,43 @@ test("empty input with --sort writes the empty page and prints nothing", async (
   assert.equal(await f.run(["--sort"]), 0);
   assert.equal(f.out, "");
   assert.ok(f.written["links.html"].includes("<ul></ul>"));
+});
+
+test("--count with three distinct links prints exactly the number and no link", async () => {
+  const f = fakes("https://example.org/a\n/b\nc\n");
+  assert.equal(await f.run(["--count"]), 0);
+  assert.equal(f.out, "3\n");
+});
+
+test("--count counts a link that appears twice once", async () => {
+  const f = fakes("a\nb\na\n");
+  assert.equal(await f.run(["--count"]), 0);
+  assert.equal(f.out, "2\n");
+});
+
+test("--count with no input prints 0", async () => {
+  const f = fakes("");
+  assert.equal(await f.run(["--count"]), 0);
+  assert.equal(f.out, "0\n");
+});
+
+test("--count with --sort prints the same number as --count", async () => {
+  const input = "b\na\nb\nB\n";
+  const plain = fakes(input);
+  await plain.run(["--count"]);
+  const sorted = fakes(input);
+  assert.equal(await sorted.run(["--count", "--sort"]), 0);
+  assert.equal(sorted.out, "3\n");
+  assert.equal(sorted.out, plain.out);
+});
+
+test("with --count the page is still written, to the named target and to links.html by default", async () => {
+  const named = fakes("a\nb\n");
+  assert.equal(await named.run(["--count", "out.html"]), 0);
+  assert.deepEqual(Object.keys(named.written), ["out.html"]);
+  assert.equal(named.written["out.html"].match(/<li>/g)?.length, 2);
+  const def = fakes("a\nb\n");
+  assert.equal(await def.run(["--count"]), 0);
+  assert.deepEqual(Object.keys(def.written), ["links.html"]);
+  assert.equal(def.written["links.html"].match(/<li>/g)?.length, 2);
 });

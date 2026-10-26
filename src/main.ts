@@ -24,11 +24,13 @@ export async function main(
   stderr: Writable = process.stderr,
 ): Promise<number> {
   let sort = false;
+  let count = false;
   const positionals: string[] = [];
   for (const arg of argv) {
     if (arg === "--sort") sort = true;
+    else if (arg === "--count") count = true;
     else if (arg.startsWith("--")) {
-      stderr.write(`error: unknown option: ${sanitizeForStderr(arg)} (only --sort is supported)\n`);
+      stderr.write(`error: unknown option: ${sanitizeForStderr(arg)} (only --sort and --count are supported)\n`);
       return 2;
     } else positionals.push(arg);
   }
@@ -42,8 +44,11 @@ export async function main(
   const distinctLinks = distinct(parseLinks(input));
   // The default sort compares UTF-16 code units: uppercase before lowercase, the same on every machine (not localeCompare).
   const links = sort ? [...distinctLinks].sort() : distinctLinks;
-  const text = consoleText(links);
-  if (text !== "") stdout.write(`${text}\n`);
+  if (count) stdout.write(`${String(links.length)}\n`);
+  else {
+    const text = consoleText(links);
+    if (text !== "") stdout.write(`${text}\n`);
+  }
   const target = positionals[0] ?? "links.html";
   try {
     await writeFile(target, renderPage(links));

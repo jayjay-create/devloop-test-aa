@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
-import { chmod, copyFile, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -196,7 +196,7 @@ test("a file name made only of control characters is reported without them", { s
 });
 
 const sortedLinks = [...expectedLinks].sort();
-const usageLine = "usage: npm run links -- [--sort] <html-file> [<output-page>]";
+const usageLine = "usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]";
 
 // The link texts of the page's <li>s in page order.
 function pageLinks(html: string): string[] {
@@ -255,7 +255,7 @@ test("an unknown option exits 2 with one stderr line naming it and writes no pag
   try {
     const r = await run(["--bogus", sample], process.env, dir);
     assert.equal(r.code, 2, r.stderr);
-    assert.equal(r.stderr, "error: unknown option: --bogus (only --sort is supported)\n");
+    assert.equal(r.stderr, "error: unknown option: --bogus (only --sort and --count are supported)\n");
     assert.equal(r.stdout, "");
     await assert.rejects(readFile(join(dir, "links.html"), "utf8"), { code: "ENOENT" });
   } finally {
@@ -266,13 +266,13 @@ test("an unknown option exits 2 with one stderr line naming it and writes no pag
 test("control characters in an unknown option do not reach stderr", async () => {
   const r = await run([sample, "--bad\u001b[31m\nname"]);
   assert.equal(r.code, 2, r.stderr);
-  assert.equal(r.stderr, "error: unknown option: --bad[31mname (only --sort is supported)\n");
+  assert.equal(r.stderr, "error: unknown option: --bad[31mname (only --sort and --count are supported)\n");
 });
 
 test("a backslash sequence in an unknown option is printed as typed, not expanded", async () => {
   const r = await run(["--\\033[2J", sample]);
   assert.equal(r.code, 2, r.stderr);
-  assert.equal(r.stderr, "error: unknown option: --\\033[2J (only --sort is supported)\n");
+  assert.equal(r.stderr, "error: unknown option: --\\033[2J (only --sort and --count are supported)\n");
 });
 
 test("an unknown option after valid arguments or beside --sort is still rejected and writes no page", async () => {
@@ -284,7 +284,7 @@ test("an unknown option after valid arguments or beside --sort is still rejected
     ]) {
       const r = await run(args, process.env, dir);
       assert.equal(r.code, 2, r.stderr);
-      assert.equal(r.stderr, "error: unknown option: --nope (only --sort is supported)\n");
+      assert.equal(r.stderr, "error: unknown option: --nope (only --sort and --count are supported)\n");
       assert.equal(r.stdout, "");
       await assert.rejects(readFile(join(dir, "page.html"), "utf8"), { code: "ENOENT" });
       await assert.rejects(readFile(join(dir, "links.html"), "utf8"), { code: "ENOENT" });
@@ -303,7 +303,7 @@ test("an unknown option is rejected before htmlq is looked for", async () => {
     const r = await run(["--bogus", sample], { ...process.env, PATH: dir }, dir);
     assert.equal(r.code, 2, r.stderr);
     assert.match(r.stderr, /--bogus/);
-    assert.match(r.stderr, /\(only --sort is supported\)/);
+    assert.match(r.stderr, /\(only --sort and --count are supported\)/);
     assert.doesNotMatch(r.stderr, /htmlq/);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -315,4 +315,57 @@ test("--sort alone shows the usage line and exits 2", async () => {
   assert.equal(r.code, 2, r.stderr);
   assert.equal(r.stderr, `${usageLine}\n`);
   assert.equal(r.stdout, "");
+});
+
+// A stub node in front of the PATH records the arguments it was called with, one per line; the first is bin.ts, which is dropped.
+async function runWithStubNode(args: string[]): Promise<{ r: Result; nodeArgs: string[] }> {
+  const dir = await mkdtemp(join(tmpdir(), "links-script-"));
+  try {
+    const record = join(dir, "args.txt");
+    const stub = join(dir, "bin", "node");
+    await mkdir(join(dir, "bin"));
+    await writeFile(stub, `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done > "${record}"\ncat > /dev/null\n`);
+    await chmod(stub, 0o755);
+    const r = await run(
+      args,
+      { ...process.env, PATH: `${join(dir, "bin")}${delimiter}${process.env.PATH ?? ""}` },
+      dir,
+    );
+    assert.equal(r.code, 0, r.stderr);
+    return { r, nodeArgs: (await readFile(record, "utf8")).split("\n").slice(1, -1) };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("--count before or after the HTML file reaches node as an argument", { skip: skipNoHtmlq }, async () => {
+  for (const args of [
+    ["--count", sample],
+    [sample, "--count"],
+  ]) {
+    const { nodeArgs } = await runWithStubNode(args);
+    assert.deepEqual(nodeArgs, ["--count"]);
+  }
+});
+
+test("--count with an output page: node gets --count and the page", { skip: skipNoHtmlq }, async () => {
+  for (const args of [
+    ["--count", sample, "page.html"],
+    [sample, "page.html", "--count"],
+  ]) {
+    const { nodeArgs } = await runWithStubNode(args);
+    assert.deepEqual(nodeArgs, ["--count", "page.html"]);
+  }
+});
+
+test("--count together with --sort: both reach node", { skip: skipNoHtmlq }, async () => {
+  for (const args of [
+    ["--count", "--sort", sample],
+    [sample, "--sort", "page.html", "--count"],
+  ]) {
+    const { nodeArgs } = await runWithStubNode(args);
+    assert.ok(nodeArgs.includes("--count"), nodeArgs.join(" "));
+    assert.ok(nodeArgs.includes("--sort"), nodeArgs.join(" "));
+    assert.equal(nodeArgs.length, args.includes("page.html") ? 3 : 2);
+  }
 });
