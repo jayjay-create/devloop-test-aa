@@ -202,9 +202,12 @@ for (const failing of ["png", "svg"]) {
       const pngBefore = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
       await writeFile(pngOf(dir), pngBefore);
       await stubMmdc(stubs, `${writeStub}\n[ "$fmt" = "${failing}" ] && exit 3\nexit 0`);
-      const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+      const log = join(dir, "log");
+      const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, log));
       assert.equal(r.code, 1, r.stderr);
       assert.match(r.stderr, /^error: mmdc failed rendering docs\/links\.mmd$/m);
+      // The run ends at the failed render: nothing is rendered after it, whichever format came first.
+      assert.equal((await stubCalls(log)).at(-1)?.format, failing);
       assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
       assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
       assert.deepEqual(await leftovers(dir), []);
@@ -385,7 +388,12 @@ test("the first mv failing: exit 1, the message names the SVG, and neither file 
     assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
     const mvCalls = await stubMvCalls(mvLog);
     assert.equal(mvCalls.length, 1, `the png is not moved after the svg move failed: ${mvCalls.join("; ")}`);
-    assert.match(mvCalls[0], /^-f \S+\/links\.svg \S+\/docs\/links\.svg$/);
+    assert.match(
+      mvCalls[0],
+      new RegExp(
+        `^-f ${escapeRegExp(dir)}/scripts/\\.\\./docs/\\.diagram\\.[^/]+/links\\.svg ${escapeRegExp(dir)}/scripts/\\.\\./docs/links\\.svg$`,
+      ),
+    );
     assert.deepEqual(await leftovers(dir), []);
   });
 });
