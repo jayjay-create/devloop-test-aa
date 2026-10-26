@@ -7,8 +7,16 @@
   <body>
     <p><a href="https://example.org/a">first</a></p>
     <p><a href="/relative/page">relative</a></p>
+    <map name="regions">
+      <area shape="rect" coords="0,0,10,10" href="https://example.org/map" alt="region">
+    </map>
     <p><a href="https://example.org/b?x=1&amp;y=2">query</a></p>
     <p><a href="https://example.org/a">first again</a></p>
+    <map name="more">
+      <area shape="rect" coords="0,0,5,5" alt="no href">
+      <area shape="rect" coords="5,5,10,10" href="/relative/page" alt="repeats an a">
+    </map>
+    <p><a href="https://example.org/map">map again</a></p>
     <img src="https://example.org/pic.png" alt="">
   </body>
 </html>

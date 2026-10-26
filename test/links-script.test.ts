@@ -11,8 +11,14 @@ const script = fileURLToPath(new URL("../scripts/links.sh", import.meta.url));
 const sample = fileURLToPath(new URL("./sample.html", import.meta.url));
 const TIMEOUT_MS = 20000;
 
-// The distinct `a` links of sample.html in document order; the <link> and <img> hrefs are not among them.
-const expectedLinks = ["https://example.org/a", "/relative/page", "https://example.org/b?x=1&y=2"];
+// The distinct `a` and `area` links of sample.html in document order; the <link> and <img> hrefs and an area
+// without href are not among them, and a link repeated by an `a` or an `area` stands once, at its first place.
+const expectedLinks = [
+  "https://example.org/a",
+  "/relative/page",
+  "https://example.org/map",
+  "https://example.org/b?x=1&y=2",
+];
 
 function onPath(name: string): boolean {
   return (process.env.PATH ?? "").split(delimiter).some((dir) => {
@@ -243,7 +249,7 @@ test("--count prints only the number and still writes the page", { skip: skipNoH
   try {
     const r = await run(["--count", sample, "page.html"], process.env, dir);
     assert.equal(r.code, 0, r.stderr);
-    assert.equal(r.stdout, "3\n");
+    assert.equal(r.stdout, `${expectedLinks.length}\n`);
     assert.deepEqual(pageLinks(await readFile(join(dir, "page.html"), "utf8")), expectedLinks);
   } finally {
     await rm(dir, { recursive: true, force: true });

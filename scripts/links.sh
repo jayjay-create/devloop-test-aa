@@ -61,7 +61,7 @@ tmp="$(mktemp)" || exit 1
 trap 'rm -f "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM
 
-if ! htmlq --attribute href 'a[href]' < "$1" > "$tmp"; then
+if ! htmlq --attribute href 'a[href], area[href]' < "$1" > "$tmp"; then
   printf '%s\n' "error: htmlq failed on: $(printable "$1")" >&2
   exit 1
 fi
