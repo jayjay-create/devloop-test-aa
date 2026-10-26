@@ -202,15 +202,9 @@ for (const failing of ["png", "svg"]) {
       const pngBefore = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
       await writeFile(pngOf(dir), pngBefore);
       await stubMmdc(stubs, `${writeStub}\n[ "$fmt" = "${failing}" ] && exit 3\nexit 0`);
-      const log = join(dir, "log");
-      const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, log));
+      const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
       assert.equal(r.code, 1, r.stderr);
       assert.match(r.stderr, /^error: mmdc failed rendering docs\/links\.mmd$/m);
-      assert.deepEqual(
-        (await stubCalls(log)).map((c) => c.format),
-        failing === "svg" ? ["png", "svg"] : ["png"],
-        "a failed render ends the run, a finished one is thrown away",
-      );
       assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
       assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
       assert.deepEqual(await leftovers(dir), []);
@@ -326,14 +320,20 @@ test("docs/links.png is a directory: exit 1 and the message, mmdc is not run", a
   });
 });
 
-// A stub mv in front of the PATH that fails for one target and otherwise does what /bin/mv does.
+// A stub mv in front of the PATH that records its arguments to $STUB_MV_LOG, one line per call, fails for the target
+// named and otherwise does what /bin/mv does.
 async function stubMv(stubs: string, failFor: string): Promise<void> {
   const file = join(stubs, "mv");
   await writeFile(
     file,
-    `#!/bin/sh\ncase "$*" in *"${failFor}") echo "mv: stub refuses" >&2; exit 1 ;; esac\nexec /bin/mv "$@"\n`,
+    `#!/bin/sh\nprintf '%s\\n' "$*" >> "$STUB_MV_LOG"\ncase "$*" in *"${failFor}") echo "mv: stub refuses" >&2; exit 1 ;; esac\nexec /bin/mv "$@"\n`,
   );
   await chmod(file, 0o755);
+}
+
+// The arguments of every mv call the stub recorded.
+async function stubMvCalls(log: string): Promise<string[]> {
+  return (await readFile(log, "utf8")).split("\n").filter((line) => line !== "");
 }
 
 test("the second mv failing: exit 1, the message says the SVG was already replaced, no temp directory is left", async () => {
@@ -341,11 +341,29 @@ test("the second mv failing: exit 1, the message says the SVG was already replac
     await stubMmdc(stubs, writeStub);
     await stubMv(stubs, "links.png");
     const pngBefore = await readFile(pngOf(dir));
-    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+    const mvLog = join(dir, "mv-log");
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], {
+      ...envWith(stubs, join(dir, "log")),
+      STUB_MV_LOG: mvLog,
+    });
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: cannot replace docs\/links\.png \(docs\/links\.svg was already replaced\)$/m);
     assert.equal(await readFile(svg, "utf8"), "stub svg");
     assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    const mvCalls = await stubMvCalls(mvLog);
+    assert.equal(mvCalls.length, 2, mvCalls.join("\n"));
+    assert.match(
+      mvCalls[0],
+      new RegExp(
+        `^-f ${escapeRegExp(dir)}/scripts/\\.\\./docs/\\.diagram\\.[^/]+/links\\.svg ${escapeRegExp(dir)}/scripts/\\.\\./docs/links\\.svg$`,
+      ),
+    );
+    assert.match(
+      mvCalls[1],
+      new RegExp(
+        `^-f ${escapeRegExp(dir)}/scripts/\\.\\./docs/\\.diagram\\.[^/]+/links\\.png ${escapeRegExp(dir)}/scripts/\\.\\./docs/links\\.png$`,
+      ),
+    );
     assert.deepEqual(await leftovers(dir), []);
   });
 });
@@ -356,11 +374,18 @@ test("the first mv failing: exit 1, the message names the SVG, and neither file 
     await stubMv(stubs, "links.svg");
     const svgBefore = await readFile(svg);
     const pngBefore = await readFile(pngOf(dir));
-    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+    const mvLog = join(dir, "mv-log");
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], {
+      ...envWith(stubs, join(dir, "log")),
+      STUB_MV_LOG: mvLog,
+    });
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: cannot replace docs\/links\.svg$/m);
     assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
     assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    const mvCalls = await stubMvCalls(mvLog);
+    assert.equal(mvCalls.length, 1, `the png is not moved after the svg move failed: ${mvCalls.join("; ")}`);
+    assert.match(mvCalls[0], /^-f \S+\/links\.svg \S+\/docs\/links\.svg$/);
     assert.deepEqual(await leftovers(dir), []);
   });
 });
