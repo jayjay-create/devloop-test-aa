@@ -21,7 +21,7 @@ Both calls do the same after the links are known:
 Run from the repository root:
 
 ```
-npm run links -- [--sort] <html-file> [<output-page>]
+npm run links -- [--sort] [--count] <html-file> [<output-page>]
 ```
 
 The script takes the `href` of every `a` element of the HTML file with htmlq and hands the links to the program. Other attributes, such as the `href` of a `link` element or the `src` of an image, are ignored.
@@ -58,6 +58,17 @@ https://example.org/a
 https://example.org/b?x=1&y=2
 ```
 
+With `--count` (anywhere among the arguments) only the number of distinct links is printed, one line, and `0` when there are none. The page is written as before, and `--sort` does not change the number:
+
+```
+$ npm run links -- --count test/sample.html
+
+> links
+> sh scripts/links.sh --count test/sample.html
+
+3
+```
+
 The written page (unsorted call) holds:
 
 ```html
@@ -82,7 +93,7 @@ The written page (unsorted call) holds:
 Run from the repository root:
 
 ```
-node src/bin.ts [--sort] [<output-page>]
+node src/bin.ts [--sort] [--count] [<output-page>]
 ```
 
 The input is one link per line (a trailing `\r` is dropped, empty lines are skipped). Example:
@@ -104,13 +115,15 @@ https://example.org/b?x=1&y=2
 
 This writes the same page as the `page.html` of Call 1.
 
-With `--sort` the links are printed and written sorted. `--sort` may stand anywhere among the arguments; giving it twice is harmless. Any other argument starting with `--` is an error, so a file name starting with `--` needs `./` in front (`./--name.html`).
+With `--sort` the links are printed and written sorted. `--sort` may stand anywhere among the arguments; giving it twice is harmless. With `--count` only the number of distinct links is printed instead of the links (`0` for no input), and the page is still written. Any other argument starting with `--` is an error, so a file name starting with `--` needs `./` in front (`./--name.html`).
 
 ```
 $ printf 'b\na\nb\nB\n' | node src/bin.ts --sort out.html
 B
 a
 b
+$ printf 'b\na\nb\nB\n' | node src/bin.ts --count out.html
+3
 ```
 
 ## Exit codes and messages
@@ -125,9 +138,9 @@ Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops 
 | 1 | `error: htmlq failed on: <name>` | `scripts/links.sh`: htmlq exited with an error on the file. |
 | 1 | `error: cannot read stdin: <os message>` | `src/main.ts`: reading stdin failed. |
 | 1 | `error: cannot write <target>: <os message>` | `src/main.ts`: the output page could not be written. |
-| 2 | `error: unknown option: <arg> (only --sort is supported)` | `src/main.ts`: an argument starting with `--` other than `--sort`. |
-| 2 | `error: unknown option: <arg> (only --sort is supported)` | `scripts/links.sh`: an argument starting with `--` other than `--sort`, checked before htmlq is looked for. |
-| 2 | `usage: npm run links -- [--sort] <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
+| 2 | `error: unknown option: <arg> (only --sort and --count are supported)` | `src/main.ts`: an argument starting with `--` other than `--sort` or `--count`. |
+| 2 | `error: unknown option: <arg> (only --sort and --count are supported)` | `scripts/links.sh`: an argument starting with `--` other than `--sort` or `--count`, checked before htmlq is looked for. |
+| 2 | `usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
 
 Examples:
 
@@ -145,11 +158,11 @@ error: htmlq failed on: test/sample.html
 # exit 1
 
 $ sh scripts/links.sh
-usage: npm run links -- [--sort] <html-file> [<output-page>]
+usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]
 # exit 2
 
 $ node src/bin.ts --foo < /dev/null
-error: unknown option: --foo (only --sort is supported)
+error: unknown option: --foo (only --sort and --count are supported)
 # exit 2
 
 $ node src/bin.ts /nonexistent-dir/x.html < /dev/null

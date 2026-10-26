@@ -1,6 +1,6 @@
 #!/bin/sh
 # Prints the distinct links of an HTML file and writes them as a page.
-# Usage: npm run links -- [--sort] <html-file> [<output-page>]
+# Usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]
 # npm appends its arguments after the whole script line, so they are handled here.
 
 # Names are printed with printf '%s', never echo: some shells' echo expands backslash sequences, so a
@@ -18,17 +18,19 @@ printable() {
   fi
 }
 
-# One pass over the arguments: --sort may stand anywhere and is remembered, any other --* is an
-# error (before htmlq is looked for and before a temp file is made), the rest stay the positionals.
+# --sort and --count may stand anywhere; the other arguments keep their order by being rotated.
+# Any other --* is an error before htmlq is looked for.
 want_sort=""
+want_count=""
 n=$#
 while [ "$n" -gt 0 ]; do
   a="$1"
   shift
   case "$a" in
     --sort) want_sort=1 ;;
+    --count) want_count=1 ;;
     --*)
-      printf '%s\n' "error: unknown option: $(printable "$a") (only --sort is supported)" >&2
+      printf '%s\n' "error: unknown option: $(printable "$a") (only --sort and --count are supported)" >&2
       exit 2
       ;;
     *) set -- "$@" "$a" ;;
@@ -37,7 +39,7 @@ while [ "$n" -gt 0 ]; do
 done
 
 if [ $# -lt 1 ]; then
-  echo "usage: npm run links -- [--sort] <html-file> [<output-page>]" >&2
+  echo "usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]" >&2
   exit 2
 fi
 
@@ -64,14 +66,15 @@ if ! htmlq --attribute href 'a[href]' < "$1" > "$tmp"; then
   exit 1
 fi
 
+# node gets the options that were given, then the output page if there is one.
+have_page=""
+page=""
 if [ $# -ge 2 ]; then
-  if [ -n "$want_sort" ]; then
-    node "$bin" --sort "$2" < "$tmp"
-  else
-    node "$bin" "$2" < "$tmp"
-  fi
-elif [ -n "$want_sort" ]; then
-  node "$bin" --sort < "$tmp"
-else
-  node "$bin" < "$tmp"
+  have_page=1
+  page="$2"
 fi
+set --
+if [ -n "$want_sort" ]; then set -- "$@" --sort; fi
+if [ -n "$want_count" ]; then set -- "$@" --count; fi
+if [ -n "$have_page" ]; then set -- "$@" "$page"; fi
+node "$bin" "$@" < "$tmp"
