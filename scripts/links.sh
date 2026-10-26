@@ -18,7 +18,8 @@ printable() {
   fi
 }
 
-# Options are collected here and rebuilt for node in a fixed order (sort, count, page); any other --* is an error before htmlq.
+# --sort and --count may stand anywhere; the other arguments keep their order by being rotated.
+# Any other --* is an error before htmlq is looked for.
 want_sort=""
 want_count=""
 n=$#

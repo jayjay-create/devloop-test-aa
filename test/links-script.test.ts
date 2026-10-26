@@ -238,6 +238,18 @@ test("--sort between or after the file names gives the same sorted output and pa
   }
 });
 
+test("--count prints only the number and still writes the page", { skip: skipNoHtmlq }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "links-script-"));
+  try {
+    const r = await run(["--count", sample, "page.html"], process.env, dir);
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.stdout, "3\n");
+    assert.deepEqual(pageLinks(await readFile(join(dir, "page.html"), "utf8")), expectedLinks);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("without --sort console and page stay in document order", { skip: skipNoHtmlq }, async () => {
   const dir = await mkdtemp(join(tmpdir(), "links-script-"));
   try {
@@ -375,6 +387,6 @@ test("--count together with --sort: both reach node", { skip: skipNoHtmlq }, asy
 });
 
 test("without --count node does not get it", { skip: skipNoHtmlq }, async () => {
-  assert.deepEqual(await runWithStubNode([sample]), []);
-  assert.deepEqual(await runWithStubNode(["--sort", sample]), ["--sort"]);
+  assert.deepEqual(await runWithStubNode([sample]), [], "no options");
+  assert.deepEqual(await runWithStubNode(["--sort", sample]), ["--sort"], "--sort only");
 });
