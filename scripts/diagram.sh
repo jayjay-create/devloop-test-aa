@@ -66,6 +66,6 @@ if ! mv -f "$tmpdir/links.svg" "$target_svg"; then
   exit 1
 fi
 if ! mv -f "$tmpdir/links.png" "$target_png"; then
-  echo "error: cannot replace docs/links.png" >&2
+  echo "error: cannot replace docs/links.png (docs/links.svg was already replaced)" >&2
   exit 1
 fi
