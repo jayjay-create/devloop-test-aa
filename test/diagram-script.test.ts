@@ -206,7 +206,8 @@ for (const failing of ["png", "svg"]) {
       const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, log));
       assert.equal(r.code, 1, r.stderr);
       assert.match(r.stderr, /^error: mmdc failed rendering docs\/links\.mmd$/m);
-      // The run ends at the failed render: nothing is rendered after it, whichever format came first.
+      // The failed render is the last mmdc call: a failed png (rendered first) does not let the svg render go on. For a failed
+      // svg, which is rendered last, the unchanged-files assertions below are what show that nothing was moved.
       assert.equal((await stubCalls(log)).at(-1)?.format, failing);
       assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
       assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
