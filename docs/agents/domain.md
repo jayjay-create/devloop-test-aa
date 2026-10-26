@@ -1,4 +1,4 @@
-<!-- devloop: 0.157.0 -->
+<!-- devloop: 0.161.0 -->
 # Domain
 
 - Glossary: `CONTEXT.md` at the repository root. Terms go in the moment they come up, not collected later.
