@@ -30,19 +30,3 @@ dependency-answered: 2026-10-23
 unattended-mode: yes
 unattended-answered: 2026-10-23
 
-## Install permission
-
-install-tools: yes
-install-place: /usr/local/bin
-install-place: /usr/local/sbin
-install-place: /opt
-install-place: ~/.local/bin
-install-place: ~/bin
-install-place: ~/go/bin
-install-place: ~/Library/Caches/ms-playwright
-install-place: ~/.cache/ms-playwright
-install-place: ~/Library/Caches/Cypress
-install-place: ~/.cache/Cypress
-install-place: ~/.cache/puppeteer
-install-route: npm
-install-answered: 2026-10-26
