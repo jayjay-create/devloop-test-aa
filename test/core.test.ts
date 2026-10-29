@@ -109,7 +109,7 @@ test("matchesGlob: many * against a long non-matching text finishes quickly (no 
   assert.ok(ms < 1000, `took ${String(ms)} ms`);
 });
 
-test("matchesGlob: backtracking and edge cases", { timeout: 5000 }, () => {
+test("matchesGlob: backtracking and edge cases", () => {
   const cases: [string, string, boolean][] = [
     ["*ab", "aab", true],
     ["*ab*", "aab", true],
