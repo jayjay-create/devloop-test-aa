@@ -99,3 +99,10 @@ test("applyExclude removes a link that matches any one of several patterns", () 
 test("applyExclude with no patterns returns the list unchanged", () => {
   assert.deepEqual(applyExclude(["a", "b"], []), ["a", "b"]);
 });
+
+test("matchesGlob: many * against a long non-matching text finishes quickly (no exponential backtracking)", () => {
+  const started = performance.now();
+  assert.equal(matchesGlob("*a*a*a*a*a*b", "a".repeat(5000)), false);
+  const ms = performance.now() - started;
+  assert.ok(ms < 1000, `took ${String(ms)} ms`);
+});
