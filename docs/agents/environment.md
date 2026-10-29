@@ -1,4 +1,4 @@
-<!-- devloop: 0.161.0 -->
+<!-- devloop: 0.165.0 -->
 # Environment
 
 Node 25 runs the TypeScript files directly (type stripping): no build and no runtime dependencies. After a clone or a pull that changes `package.json`, run `npm install` once for Biome, the one dev dependency.
@@ -30,3 +30,7 @@ dependency-answered: 2026-10-23
 unattended-mode: yes
 unattended-answered: 2026-10-23
 
+## Install permission
+
+install-tools: no
+install-answered: 2026-10-29
