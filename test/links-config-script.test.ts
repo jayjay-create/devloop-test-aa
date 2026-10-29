@@ -430,11 +430,11 @@ test("a pattern with a newline is an error (exit 1) naming the key; npm is not c
   assert.equal(r.npmArgs, undefined);
 });
 
-test("a failing yq on exclude is an error with its message; npm is not called", async () => {
+test("a failing yq on exclude is an error with its message even when it printed a valid answer; npm is not called", async () => {
   const r = await runScript({
     config: "exclude: [\n",
     yq: { out: "null", err: "bad file" },
-    yqBy: { [patternExprs.tag]: { out: "", code: 1 } },
+    yqBy: { [patternExprs.tag]: { out: "!!null", code: 1 } },
     args: page,
   });
   assert.equal(r.code, 1, r.stderr);
