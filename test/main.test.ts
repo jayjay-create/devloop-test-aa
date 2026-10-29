@@ -352,3 +352,11 @@ test("the page hrefs of the remaining links are decoded: a link with & stays as 
   assert.ok(f.written["links.html"].includes("x?a=1&amp;b=2"));
   assert.deepEqual(pageHrefs(f.written["links.html"]), ["x?a=1&b=2"]);
 });
+
+test("pageHrefs decodes every entity once: a link that contains &lt; stays as typed", async () => {
+  const link = "x?q=&lt;&\"'<>";
+  const f = fakes(`a\n${link}\n`);
+  assert.equal(await f.run(["--exclude=a"]), 0);
+  assert.ok(f.written["links.html"].includes("x?q=&amp;lt;&amp;&quot;&#39;&lt;&gt;"));
+  assert.deepEqual(pageHrefs(f.written["links.html"]), [link]);
+});
