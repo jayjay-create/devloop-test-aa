@@ -35,9 +35,9 @@ export function consoleText(links: string[]): string {
 export function matchesGlob(pattern: string, href: string): boolean {
   let patternIndex = 0;
   let hrefIndex = 0;
-  // Where the last `*` of the pattern stands (-1 = none yet) and the position in href from which the text it
-  // takes ends for now. A mismatch after a `*` backtracks: the `*` takes one more character of href and the
-  // pattern after it is tried again from there.
+  // starIndex: the index of the last `*` in the pattern (-1 = none yet). starHrefIndex: the position in href
+  // where the text taken by that `*` ends for now. A mismatch after a `*` backtracks: the `*` takes one more
+  // character of href and the pattern after it is tried again from there.
   let starIndex = -1;
   let starHrefIndex = 0;
   while (hrefIndex < href.length) {

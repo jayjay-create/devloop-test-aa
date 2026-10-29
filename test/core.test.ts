@@ -100,14 +100,16 @@ test("applyExclude with no patterns returns the list unchanged", () => {
   assert.deepEqual(applyExclude(["a", "b"], []), ["a", "b"]);
 });
 
-test("matchesGlob: many * against a long non-matching text finishes quickly (no exponential backtracking)", () => {
+test("matchesGlob: many * against a long non-matching text finishes quickly (no exponential backtracking)", {
+  timeout: 5000,
+}, () => {
   const started = performance.now();
   assert.equal(matchesGlob("*a*a*a*a*a*b", "a".repeat(5000)), false);
   const ms = performance.now() - started;
   assert.ok(ms < 1000, `took ${String(ms)} ms`);
 });
 
-test("matchesGlob: backtracking and edge cases", () => {
+test("matchesGlob: backtracking and edge cases", { timeout: 5000 }, () => {
   const cases: [string, string, boolean][] = [
     ["*ab", "aab", true],
     ["*ab*", "aab", true],

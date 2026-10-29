@@ -492,7 +492,7 @@ test("the temporary file is gone after an exclude error and after a pattern run"
 test("an empty pattern is passed as --exclude= wherever it stands in the list (alone, first, last, in the middle, repeated)", async () => {
   for (const patterns of [[""], ["a", ""], ["", "a"], ["", ""], ["a", "", "b"]]) {
     const r = await runScript({ ...excludeOf(...patterns), yq: { out: "false" }, args: page });
-    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.code, 0, `${JSON.stringify(patterns)}: ${r.stderr}`);
     assert.deepEqual(
       r.npmArgs,
       ["run", "links", "--", ...patterns.map((p) => `--exclude=${p}`), ...page],

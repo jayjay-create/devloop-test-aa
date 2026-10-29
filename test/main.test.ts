@@ -323,9 +323,16 @@ test("--exclude= with an empty glob excludes only an empty text, so every link s
   assert.equal(f.out, "a\nb\n");
 });
 
-// The hrefs of the page's list items, in order.
+// The hrefs of the page's list items, in order, with the five entities escapeHtml writes decoded.
 function pageHrefs(html: string): string[] {
-  return [...html.matchAll(/<li><a href="([^"]*)">/g)].map((m) => m[1]);
+  return [...html.matchAll(/<li><a href="([^"]*)">/g)].map((m) =>
+    m[1]
+      .replaceAll("&lt;", "<")
+      .replaceAll("&gt;", ">")
+      .replaceAll("&quot;", '"')
+      .replaceAll("&#39;", "'")
+      .replaceAll("&amp;", "&"),
+  );
 }
 
 test("a duplicate of an excluded link is gone too, and a remaining duplicate counts once", async () => {
@@ -336,4 +343,12 @@ test("a duplicate of an excluded link is gone too, and a remaining duplicate cou
   const g = fakes("a\nb\nb\na\n");
   assert.equal(await g.run(["--count", "--exclude=a"]), 0);
   assert.equal(g.out, "1\n");
+});
+
+test("the page hrefs of the remaining links are decoded: a link with & stays as typed", async () => {
+  const f = fakes("a\nx?a=1&b=2\na\n");
+  assert.equal(await f.run(["--exclude=a"]), 0);
+  assert.equal(f.out, "x?a=1&b=2\n");
+  assert.ok(f.written["links.html"].includes("x?a=1&amp;b=2"));
+  assert.deepEqual(pageHrefs(f.written["links.html"]), ["x?a=1&b=2"]);
 });
