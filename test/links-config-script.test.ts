@@ -45,6 +45,8 @@ type Outcome = Result & {
   yqArgs: string[] | undefined;
   // The expression of every yq call, in order.
   yqExprs: string[];
+  // The file argument of every yq call, in order.
+  yqFiles: string[];
   // The project root the run used; it is removed when runScript returns, so only its name is of use.
   dir: string;
   // Files the script left in its TMPDIR.
@@ -98,6 +100,7 @@ async function runScript(s: Setup): Promise<Outcome> {
         // yq-args keeps the arguments of the first call; yq-exprs lists the expression of every call.
         `#!/bin/sh\nif [ ! -f "${dir}/yq-args" ]; then for a in "$@"; do printf '%s\\n' "$a"; done > "${dir}/yq-args"; fi\n` +
           `printf '%s\\n' "$1" >> "${dir}/yq-exprs"\n` +
+          `printf '%s\\n' "$2" >> "${dir}/yq-files"\n` +
           // The names in TMPDIR while yq runs; a glob, since ls is not on the PATH of the run.
           `for f in "$TMPDIR"/*; do printf '%s\\n' "\${f##*/}"; done > "${dir}/yq-tmp"\n` +
           `printf '%s\\n' "$YQ_ERR" >&2\n` +
@@ -150,6 +153,7 @@ async function runScript(s: Setup): Promise<Outcome> {
       yqCalled: yqArgs !== undefined,
       yqArgs,
       yqExprs: lines(await read("yq-exprs")) ?? [],
+      yqFiles: lines(await read("yq-files")) ?? [],
       dir,
       tmpLeft: await readdir(join(dir, "tmp")),
       tmpDuring: lines(await read("yq-tmp")),
@@ -366,6 +370,8 @@ test("yq is asked for the type of exclude, the type of its items, newlines in th
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.yqExprs, [".sort", patternExprs.tag, patternExprs.items, patternExprs.newline, patternExprs.list]);
   assert.equal(r.yqArgs?.[0], ".sort");
+  // Every call reads the config of the project root, not only the first.
+  assert.deepEqual(r.yqFiles, Array(5).fill(join(r.dir, "links.config.yaml")));
 });
 
 test("exclude: [] (a list without items) passes nothing", async () => {
@@ -442,22 +448,23 @@ test("a failing yq on exclude is an error with its message even when it printed 
   assert.equal(r.npmArgs, undefined);
 });
 
-test("a control character in a pattern is passed on as typed, in the error text it is not printed raw", async () => {
-  const bad = await runScript({
-    config: "exclude: 5\n",
-    yq: { out: "null" },
-    yqBy: { [patternExprs.tag]: { out: "!!int" } },
-    args: page,
-  });
-  assert.ok(!bad.stderr.includes("\u001b"), JSON.stringify(bad.stderr));
+test("a control character in the message of a failing yq on exclude is not printed raw", async () => {
   const failing = await runScript({
     config: "exclude: [\n",
     yq: { out: "null", err: "bad\u001b[2J file" },
-    yqBy: { [patternExprs.tag]: { out: "", code: 1 } },
+    yqBy: { [patternExprs.tag]: { out: "!!null", code: 1 } },
     args: page,
   });
   assert.equal(failing.code, 1, failing.stderr);
   assert.ok(!failing.stderr.includes("\u001b"), JSON.stringify(failing.stderr));
+  assert.ok(failing.stderr.includes("(exit 1): bad[2J file"), JSON.stringify(failing.stderr));
+});
+
+test("a control character inside a pattern reaches --exclude= exactly as typed", async () => {
+  const patterns = ["a\u001b[2Jb*", "x\ty*"];
+  const r = await runScript({ ...excludeOf(...patterns), yq: { out: "false" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...patterns.map((p) => `--exclude=${p}`), ...page]);
 });
 
 test("no config file: no exclude arguments and yq is never called", async () => {
@@ -477,4 +484,16 @@ test("the temporary file is gone after an exclude error and after a pattern run"
   assert.equal(bad.code, 1, bad.stderr);
   assert.equal(ok.code, 0, ok.stderr);
   assert.deepEqual([bad.tmpLeft, ok.tmpLeft], [[], []]);
+});
+
+test("empty patterns are passed like any other text: [''], ['a', ''] and ['', 'a']", async () => {
+  for (const patterns of [[""], ["a", ""], ["", "a"], ["", ""], ["a", "", "b"]]) {
+    const r = await runScript({ ...excludeOf(...patterns), yq: { out: "false" }, args: page });
+    assert.equal(r.code, 0, r.stderr);
+    assert.deepEqual(
+      r.npmArgs,
+      ["run", "links", "--", ...patterns.map((p) => `--exclude=${p}`), ...page],
+      JSON.stringify(patterns),
+    );
+  }
 });

@@ -21,6 +21,7 @@ root="$(cd -- "$(dirname -- "$0")/.." && pwd)" || exit 1
 config="$root/links.config.yaml"
 value="null"
 patterns=""
+count=0
 
 if [ -f "$config" ]; then
   if ! command -v yq >/dev/null 2>&1; then
@@ -66,12 +67,16 @@ if [ -f "$config" ]; then
     '!!seq')
       cfg_get '.exclude[] | tag'
       # An empty list prints nothing; a here-document would still give the loop one empty line.
+      # The loop counts the items: the count is what reads the patterns below, because the command
+      # substitution strips trailing newlines and so loses trailing empty patterns.
+      count=0
       if [ -n "$cfg_out" ]; then
         while IFS= read -r item_tag; do
           if [ "$item_tag" != '!!str' ]; then
             echo "error: links.config.yaml: exclude must be a list of text" >&2
             exit 1
           fi
+          count=$((count + 1))
         done <<EOF
 $cfg_out
 EOF
@@ -93,10 +98,14 @@ EOF
 
   # The --exclude arguments go in front of the user's arguments: appended behind them, then the
   # user's arguments are moved behind the new ones.
-  if [ -n "$patterns" ]; then
+  if [ "$count" -gt 0 ]; then
     n=$#
-    while IFS= read -r pattern; do
+    i=0
+    # Exactly $count patterns: a read that finds no line left is a trailing empty pattern.
+    while [ "$i" -lt "$count" ]; do
+      IFS= read -r pattern || pattern=""
       set -- "$@" "--exclude=$pattern"
+      i=$((i + 1))
     done <<EOF
 $patterns
 EOF

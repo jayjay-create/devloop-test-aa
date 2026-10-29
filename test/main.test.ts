@@ -322,3 +322,13 @@ test("--exclude= with an empty glob excludes only an empty text, so every link s
   assert.equal(await f.run(["--exclude="]), 0);
   assert.equal(f.out, "a\nb\n");
 });
+
+test("a duplicate of an excluded link is gone too and --count counts only the remaining distinct links", async () => {
+  const f = fakes("a\nb\na\n");
+  assert.equal(await f.run(["--exclude=a"]), 0);
+  assert.equal(f.out, "b\n");
+  assert.equal(f.written["links.html"].match(/<li>/g)?.length, 1);
+  const g = fakes("a\nb\na\n");
+  assert.equal(await g.run(["--count", "--exclude=a"]), 0);
+  assert.equal(g.out, "1\n");
+});
