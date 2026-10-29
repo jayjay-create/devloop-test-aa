@@ -27,3 +27,17 @@ export function renderPage(links: string[]): string {
 export function consoleText(links: string[]): string {
   return links.join("\n");
 }
+
+// A glob over the whole text, case-sensitive. Only `*` is special (any text, none included, newlines too);
+// every other character, `?` and `[` among them, stands for itself.
+export function matchesGlob(pattern: string, href: string): boolean {
+  const source = pattern
+    .split("*")
+    .map((part) => part.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("[\\s\\S]*");
+  return new RegExp(`^${source}$`, "u").test(href);
+}
+
+export function applyExclude(links: string[], patterns: string[]): string[] {
+  return links.filter((link) => !patterns.some((p) => matchesGlob(p, link)));
+}

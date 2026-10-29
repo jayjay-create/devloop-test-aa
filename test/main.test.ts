@@ -166,7 +166,7 @@ test("an unknown option returns 2 with one stderr line and writes nothing", asyn
   };
   const f = fakes(input);
   assert.equal(await f.run(["--foo"]), 2);
-  assert.equal(f.err, "error: unknown option: --foo (only --sort and --count are supported)\n");
+  assert.equal(f.err, "error: unknown option: --foo (only --sort, --count and --exclude=GLOB are supported)\n");
   assert.equal(f.out, "");
   assert.deepEqual(Object.keys(f.written), []);
   assert.equal(read, false);
@@ -183,7 +183,7 @@ test("an unknown option after --sort and a page name is still rejected", async (
 test("control characters in an unknown option do not reach stderr", async () => {
   const f = fakes("a\n");
   assert.equal(await f.run([`--x\n\u001b[31m`]), 2);
-  assert.equal(f.err, "error: unknown option: --x [31m (only --sort and --count are supported)\n");
+  assert.equal(f.err, "error: unknown option: --x [31m (only --sort, --count and --exclude=GLOB are supported)\n");
   assert.equal(f.err.trimEnd().split("\n").length, 1);
   assert.ok(!/[\p{Cc}\p{Zl}\p{Zp}]/u.test(f.err.trimEnd()));
   assert.equal(f.out, "");
@@ -268,4 +268,57 @@ test("--count after --sort or after the page name works the same", async () => {
     assert.ok(f.written[key], argv.join(" "));
     assert.equal(f.written[key], plain.written[key], argv.join(" "));
   }
+});
+
+test("--exclude=GLOB drops matching links from console and page, keeping the order", async () => {
+  const f = fakes("a.pdf\nb\nc.PDF\nd.pdf\ne\n");
+  assert.equal(await f.run(["--exclude=*.pdf"]), 0);
+  assert.equal(f.out, "b\nc.PDF\ne\n");
+  const page = f.written["links.html"];
+  assert.equal(page.match(/<li>/g)?.length, 3);
+  assert.ok(!page.includes("a.pdf") && !page.includes("d.pdf"));
+});
+
+test("--exclude is repeatable: a link matching any one pattern is dropped", async () => {
+  const f = fakes("a.pdf\nb.zip\nc.html\n");
+  assert.equal(await f.run(["--exclude=*.pdf", "--exclude=*.zip"]), 0);
+  assert.equal(f.out, "c.html\n");
+});
+
+test("--exclude with --count counts only the remaining distinct links", async () => {
+  const f = fakes("a.pdf\nb\nb\nc\na.pdf\n");
+  assert.equal(await f.run(["--count", "--exclude=*.pdf"]), 0);
+  assert.equal(f.out, "2\n");
+  assert.equal(f.written["links.html"].match(/<li>/g)?.length, 2);
+});
+
+test("--exclude and --sort: the remaining links are sorted", async () => {
+  const f = fakes("d\nx.pdf\nb\nc\n");
+  assert.equal(await f.run(["--sort", "--exclude=*.pdf"]), 0);
+  assert.equal(f.out, "b\nc\nd\n");
+});
+
+test("--exclude=* leaves nothing: no console text, --count prints 0, the page holds an empty list", async () => {
+  const f = fakes("a\nb\n");
+  assert.equal(await f.run(["--exclude=*"]), 0);
+  assert.equal(f.out, "");
+  assert.ok(f.written["links.html"].includes("<ul></ul>"));
+  const g = fakes("a\nb\n");
+  assert.equal(await g.run(["--count", "--exclude=*"]), 0);
+  assert.equal(g.out, "0\n");
+  assert.ok(g.written["links.html"].includes("<ul></ul>"));
+});
+
+test("a bare --exclude exits 2 as an unknown option and writes nothing", async () => {
+  const f = fakes("a\n");
+  assert.equal(await f.run(["--exclude"]), 2);
+  assert.equal(f.err, "error: unknown option: --exclude (only --sort, --count and --exclude=GLOB are supported)\n");
+  assert.equal(f.out, "");
+  assert.deepEqual(Object.keys(f.written), []);
+});
+
+test("--exclude= with an empty glob excludes only an empty text, so every link stays", async () => {
+  const f = fakes("a\nb\n");
+  assert.equal(await f.run(["--exclude="]), 0);
+  assert.equal(f.out, "a\nb\n");
 });
