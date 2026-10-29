@@ -33,24 +33,27 @@ export function consoleText(links: string[]): string {
 // by a regular expression built from the pattern, so a crafted pattern cannot make it take exponential
 // time: at worst the work is the length of the pattern times the length of the text.
 export function matchesGlob(pattern: string, href: string): boolean {
-  let p = 0;
-  let h = 0;
-  let star = -1; // position of the last `*` seen in the pattern
-  let mark = 0; // where in href the text taken by that `*` ends for now
-  while (h < href.length) {
-    if (p < pattern.length && pattern[p] === "*") {
-      star = p++;
-      mark = h;
-    } else if (p < pattern.length && pattern[p] === href[h]) {
-      p++;
-      h++;
-    } else if (star !== -1) {
-      p = star + 1;
-      h = ++mark;
+  let patternIndex = 0;
+  let hrefIndex = 0;
+  // Where the last `*` of the pattern stands (-1 = none yet) and the position in href from which the text it
+  // takes ends for now. A mismatch after a `*` backtracks: the `*` takes one more character of href and the
+  // pattern after it is tried again from there.
+  let starIndex = -1;
+  let starHrefIndex = 0;
+  while (hrefIndex < href.length) {
+    if (patternIndex < pattern.length && pattern[patternIndex] === "*") {
+      starIndex = patternIndex++;
+      starHrefIndex = hrefIndex;
+    } else if (patternIndex < pattern.length && pattern[patternIndex] === href[hrefIndex]) {
+      patternIndex++;
+      hrefIndex++;
+    } else if (starIndex !== -1) {
+      patternIndex = starIndex + 1;
+      hrefIndex = ++starHrefIndex;
     } else return false;
   }
-  while (p < pattern.length && pattern[p] === "*") p++;
-  return p === pattern.length;
+  while (patternIndex < pattern.length && pattern[patternIndex] === "*") patternIndex++;
+  return patternIndex === pattern.length;
 }
 
 export function applyExclude(links: string[], patterns: string[]): string[] {

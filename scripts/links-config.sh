@@ -69,7 +69,6 @@ if [ -f "$config" ]; then
       # An empty list prints nothing; a here-document would still give the loop one empty line.
       # The loop counts the items: the count is what reads the patterns below, because the command
       # substitution strips trailing newlines and so loses trailing empty patterns.
-      count=0
       if [ -n "$cfg_out" ]; then
         while IFS= read -r item_tag; do
           if [ "$item_tag" != '!!str' ]; then
