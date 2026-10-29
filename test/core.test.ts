@@ -106,3 +106,25 @@ test("matchesGlob: many * against a long non-matching text finishes quickly (no 
   const ms = performance.now() - started;
   assert.ok(ms < 1000, `took ${String(ms)} ms`);
 });
+
+test("matchesGlob: backtracking and edge cases", () => {
+  const cases: [string, string, boolean][] = [
+    ["*ab", "aab", true],
+    ["*ab*", "aab", true],
+    ["a*b*c", "abcbc", true],
+    ["a*b*c", "abxc", true], // the second * takes "x"
+    ["a*b*c", "abxd", false],
+    ["a*b*c", "acb", false],
+    ["*a*b", "ab ab", true],
+    ["a*", "a", true],
+    ["**", "", true],
+    ["", "", true],
+    ["", "a", false],
+    ["abc", "ab", false],
+    ["ab*c", "ab", false],
+    ["*a*a*b", "aaab", true],
+  ];
+  for (const [pattern, href, expected] of cases) {
+    assert.equal(matchesGlob(pattern, href), expected, `${JSON.stringify(pattern)} vs ${JSON.stringify(href)}`);
+  }
+});

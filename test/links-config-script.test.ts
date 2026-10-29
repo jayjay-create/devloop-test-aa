@@ -100,6 +100,7 @@ async function runScript(s: Setup): Promise<Outcome> {
         // yq-args keeps the arguments of the first call; yq-exprs lists the expression of every call.
         `#!/bin/sh\nif [ ! -f "${dir}/yq-args" ]; then for a in "$@"; do printf '%s\\n' "$a"; done > "${dir}/yq-args"; fi\n` +
           `printf '%s\\n' "$1" >> "${dir}/yq-exprs"\n` +
+          // Only $2: the other arguments are constants of the expressions, asserted through yq-exprs.
           `printf '%s\\n' "$2" >> "${dir}/yq-files"\n` +
           // The names in TMPDIR while yq runs; a glob, since ls is not on the PATH of the run.
           `for f in "$TMPDIR"/*; do printf '%s\\n' "\${f##*/}"; done > "${dir}/yq-tmp"\n` +
@@ -458,6 +459,8 @@ test("a control character in the message of a failing yq on exclude is not print
   assert.equal(failing.code, 1, failing.stderr);
   assert.ok(!failing.stderr.includes("\u001b"), JSON.stringify(failing.stderr));
   assert.ok(failing.stderr.includes("(exit 1): bad[2J file"), JSON.stringify(failing.stderr));
+  assert.equal(failing.npmArgs, undefined);
+  assert.equal(failing.stdout, "");
 });
 
 test("a control character inside a pattern reaches --exclude= exactly as typed", async () => {
@@ -486,7 +489,7 @@ test("the temporary file is gone after an exclude error and after a pattern run"
   assert.deepEqual([bad.tmpLeft, ok.tmpLeft], [[], []]);
 });
 
-test("empty patterns are passed like any other text: [''], ['a', ''] and ['', 'a']", async () => {
+test("an empty pattern is passed as --exclude= wherever it stands in the list (alone, first, last, in the middle, repeated)", async () => {
   for (const patterns of [[""], ["a", ""], ["", "a"], ["", ""], ["a", "", "b"]]) {
     const r = await runScript({ ...excludeOf(...patterns), yq: { out: "false" }, args: page });
     assert.equal(r.code, 0, r.stderr);
