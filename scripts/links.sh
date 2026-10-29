@@ -1,7 +1,7 @@
 #!/bin/sh
 # Prints the distinct links of an HTML file and writes them as a page.
 # Usage: npm run links -- [--sort] [--count] [--exclude=GLOB] [--title=TEXT] <html-file> [<output-page>]
-# --exclude=GLOB (repeatable) and --title=TEXT (`=` form only) are passed on to node unchanged; scripts/links-config.sh uses them.
+# --exclude=GLOB (repeatable) and --title=TEXT, both in the `=` form only, are passed on to node unchanged; scripts/links-config.sh uses them.
 # npm appends its arguments after the whole script line, so they are handled here.
 
 # Names are printed with printf '%s', never echo: some shells' echo expands backslash sequences, so a

@@ -587,6 +587,7 @@ test("a title with a newline is an error (exit 1) naming the key; npm is not cal
   });
   assert.equal(r.code, 1, r.stderr);
   assert.equal(r.stderr, "error: links.config.yaml: a title must not contain a newline\n");
+  assert.equal(r.stdout, "");
   assert.equal(r.npmArgs, undefined);
 });
 
@@ -632,4 +633,16 @@ test("the temporary file is gone after a title error and after a title run", asy
   assert.equal(bad.code, 1, bad.stderr);
   assert.equal(ok.code, 0, ok.stderr);
   assert.deepEqual([bad.tmpLeft, ok.tmpLeft], [[], []]);
+});
+
+test('exclude with an explicit title: "" passes the --exclude and no --title', async () => {
+  const r = await runScript({
+    config: "exclude: [a]\ntitle: ''\n",
+    yq: { out: "null" },
+    yqBy: { ...excludeOf("a").yqBy, ...titleOf("").yqBy },
+    args: page,
+  });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--exclude=a", ...page]);
+  assert.ok(!r.npmArgs?.some((a) => a.startsWith("--title")), String(r.npmArgs));
 });

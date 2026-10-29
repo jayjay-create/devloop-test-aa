@@ -136,6 +136,7 @@ test("renderPage with a title writes an escaped h1 before the ul", () => {
   assert.ok(page.indexOf(h1) < page.indexOf("<ul>"), page);
   assert.ok(page.includes("<title>Links</title>"));
   const empty = renderPage([], { title: "T" });
+  assert.ok(empty.includes("<h1>T</h1>"), empty);
   assert.ok(empty.indexOf("<h1>T</h1>") < empty.indexOf("<ul></ul>"), empty);
 });
 
