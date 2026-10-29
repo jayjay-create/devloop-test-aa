@@ -1,6 +1,7 @@
 #!/bin/sh
 # Runs npm run links with the settings of links.config.yaml in the project root: --sort when it says
-# `sort: true`, and one --exclude=<pattern> for every pattern of its `exclude` list (globs: * is any text).
+# `sort: true`, and one --exclude=<pattern> for every pattern of its `exclude` list (globs: * is any text),
+# and --title=<text> when `title` is a non-empty text.
 # Usage: npm run links:config -- <html-file> [<output-page>]
 # Needs yq (Mike Farah's) when the config file exists: brew install yq
 
@@ -22,6 +23,7 @@ config="$root/links.config.yaml"
 value="null"
 patterns=""
 count=0
+title=""
 
 if [ -f "$config" ]; then
   if ! command -v yq >/dev/null 2>&1; then
@@ -95,9 +97,29 @@ EOF
       ;;
   esac
 
-  # The --exclude arguments go in front of the user's arguments: appended behind them, then the
-  # user's arguments are moved behind the new ones.
-  if [ "$count" -gt 0 ]; then
+  # title is nothing or text. A title with a newline is refused like a pattern with one: the value is read
+  # as one command substitution, which strips trailing newlines, so it would not reach --title= as typed.
+  cfg_get '.title | tag'
+  case "$cfg_out" in
+    '!!null') ;;
+    '!!str')
+      cfg_get '.title | contains("\n")'
+      if [ "$cfg_out" != "false" ]; then
+        echo "error: links.config.yaml: a title must not contain a newline" >&2
+        exit 1
+      fi
+      cfg_get '.title'
+      title="$cfg_out"
+      ;;
+    *)
+      echo "error: links.config.yaml: title must be text" >&2
+      exit 1
+      ;;
+  esac
+
+  # The --exclude and --title arguments go in front of the user's arguments: appended behind them, then
+  # the user's arguments are moved behind the new ones.
+  if [ "$count" -gt 0 ] || [ -n "$title" ]; then
     n=$#
     i=0
     # Exactly $count patterns: a read that finds no line left is a trailing empty pattern.
@@ -108,6 +130,8 @@ EOF
     done <<EOF
 $patterns
 EOF
+    # An empty title passes nothing, as a missing key does.
+    if [ -n "$title" ]; then set -- "$@" "--title=$title"; fi
     while [ "$n" -gt 0 ]; do
       a="$1"
       shift
