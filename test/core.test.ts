@@ -128,3 +128,22 @@ test("matchesGlob: backtracking and edge cases", () => {
     assert.equal(matchesGlob(pattern, href), expected, `${JSON.stringify(pattern)} vs ${JSON.stringify(href)}`);
   }
 });
+
+test("renderPage with a title writes an escaped h1 before the ul", () => {
+  const page = renderPage(["a"], { title: 'A <b> & "c"' });
+  const h1 = "<h1>A &lt;b&gt; &amp; &quot;c&quot;</h1>";
+  assert.ok(page.includes(h1), page);
+  assert.ok(page.indexOf(h1) < page.indexOf("<ul>"), page);
+  assert.ok(page.includes("<title>Links</title>"));
+  const empty = renderPage([], { title: "T" });
+  assert.ok(empty.includes("<h1>T</h1>"), empty);
+  assert.ok(empty.indexOf("<h1>T</h1>") < empty.indexOf("<ul></ul>"), empty);
+});
+
+test("renderPage without a title, with an empty one or with undefined is byte-identical", () => {
+  const links = ["a", "b&c"];
+  assert.equal(renderPage(links, { title: "" }), renderPage(links));
+  assert.equal(renderPage(links, {}), renderPage(links));
+  assert.equal(renderPage(links, { title: undefined }), renderPage(links));
+  assert.ok(!renderPage(links, { title: "" }).includes("<h1>"));
+});

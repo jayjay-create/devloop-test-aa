@@ -86,6 +86,8 @@ async function runScript(s: Setup): Promise<Outcome> {
       const by: Record<string, { out: string; code?: number }> = {
         ".exclude | tag": { out: "!!null" },
         '[.exclude[] | select(contains("\\n"))] | length': { out: "0" },
+        ".title | tag": { out: "!!null" },
+        '.title | contains("\\n")': { out: "false" },
         ...s.yqBy,
       };
       let cases = "";
@@ -327,6 +329,12 @@ test("package.json has the links:config script", async () => {
   assert.equal(pkg.scripts["links:config"], "sh scripts/links-config.sh");
 });
 
+const titleExprs = {
+  tag: ".title | tag",
+  newline: '.title | contains("\\n")',
+  text: ".title",
+};
+
 const patternExprs = {
   tag: ".exclude | tag",
   items: ".exclude[] | tag",
@@ -369,10 +377,17 @@ test("patterns with spaces, quotes, backslashes and a leading space stay single 
 test("yq is asked for the type of exclude, the type of its items, newlines in them and then the patterns", async () => {
   const r = await runScript({ ...excludeOf("a"), yq: { out: "false" }, args: page });
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(r.yqExprs, [".sort", patternExprs.tag, patternExprs.items, patternExprs.newline, patternExprs.list]);
+  assert.deepEqual(r.yqExprs, [
+    ".sort",
+    patternExprs.tag,
+    patternExprs.items,
+    patternExprs.newline,
+    patternExprs.list,
+    titleExprs.tag,
+  ]);
   assert.equal(r.yqArgs?.[0], ".sort");
   // Every call reads the config of the project root, not only the first.
-  assert.deepEqual(r.yqFiles, Array(5).fill(join(r.dir, "links.config.yaml")));
+  assert.deepEqual(r.yqFiles, Array(6).fill(join(r.dir, "links.config.yaml")));
 });
 
 test("exclude: [] (a list without items) passes nothing", async () => {
@@ -390,7 +405,7 @@ test("a missing exclude key passes nothing and asks no further than its type", a
   const r = await runScript({ config: "sort: false\n", yq: { out: "false" }, args: page });
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
-  assert.deepEqual(r.yqExprs, [".sort", patternExprs.tag]);
+  assert.deepEqual(r.yqExprs, [".sort", patternExprs.tag, titleExprs.tag]);
 });
 
 test("exclude that is not a list is an error naming the file and the key; npm is not called", async () => {
@@ -499,4 +514,135 @@ test("an empty pattern is passed as --exclude= wherever it stands in the list (a
       JSON.stringify(patterns),
     );
   }
+});
+
+// A config with a title as the stub yq would read it.
+function titleOf(title: string): Pick<Setup, "config" | "yqBy"> {
+  return {
+    config: `title: ${JSON.stringify(title)}\n`,
+    yqBy: {
+      [titleExprs.tag]: { out: "!!str" },
+      [titleExprs.newline]: { out: "false" },
+      [titleExprs.text]: { out: title },
+    },
+  };
+}
+
+test('title: "My links" passes --title=My links as one argument, before the arguments', async () => {
+  const r = await runScript({ ...titleOf("My links"), yq: { out: "null" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--title=My links", ...page]);
+});
+
+test("a title reaches --title= exactly as typed: &, <, quotes, a leading dash, control characters, backslashes", async () => {
+  for (const title of ["A <b> & \"c\" 'd'", "-x --sort", "a\u001b[2Jb\tc", "x\\y *", "=", " lead and trail "]) {
+    const r = await runScript({ ...titleOf(title), yq: { out: "null" }, args: spaced });
+    assert.equal(r.code, 0, `${JSON.stringify(title)}: ${r.stderr}`);
+    assert.deepEqual(r.npmArgs, ["run", "links", "--", `--title=${title}`, ...spaced], JSON.stringify(title));
+  }
+});
+
+test('title: "" passes nothing', async () => {
+  const r = await runScript({ ...titleOf(""), yq: { out: "null" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
+});
+
+test("a missing title key passes nothing and asks only for its type", async () => {
+  const r = await runScript({ config: "sort: false\n", yq: { out: "false" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
+  assert.equal(r.yqExprs.at(-1), titleExprs.tag);
+  assert.ok(!r.yqExprs.includes(titleExprs.text), String(r.yqExprs));
+});
+
+test("yq is asked for the type of title, newlines in it and then the title, each on the config of the project root", async () => {
+  const r = await runScript({ ...titleOf("T"), yq: { out: "null" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.yqExprs.slice(-3), [titleExprs.tag, titleExprs.newline, titleExprs.text]);
+  assert.deepEqual(r.yqFiles, Array(r.yqExprs.length).fill(join(r.dir, "links.config.yaml")));
+});
+
+test("title that is not text is an error naming the file and the key; npm is not called", async () => {
+  for (const tag of ["!!seq", "!!map", "!!int", "!!bool", "!!float"]) {
+    const r = await runScript({
+      config: "title: [a]\n",
+      yq: { out: "null" },
+      yqBy: { [titleExprs.tag]: { out: tag } },
+      args: page,
+    });
+    assert.equal(r.code, 1, `${tag}: ${r.stderr}`);
+    assert.equal(r.stderr, "error: links.config.yaml: title must be text\n", tag);
+    assert.equal(r.npmArgs, undefined, tag);
+    assert.equal(r.stdout, "", tag);
+  }
+});
+
+test("a title with a newline is an error (exit 1) naming the key; npm is not called", async () => {
+  const r = await runScript({
+    ...titleOf("a\nb"),
+    yq: { out: "null" },
+    yqBy: { [titleExprs.tag]: { out: "!!str" }, [titleExprs.newline]: { out: "true" } },
+    args: page,
+  });
+  assert.equal(r.code, 1, r.stderr);
+  assert.equal(r.stderr, "error: links.config.yaml: a title must not contain a newline\n");
+  assert.equal(r.stdout, "");
+  assert.equal(r.npmArgs, undefined);
+});
+
+test("a failing yq on title is an error with its message, printed without control characters; npm is not called", async () => {
+  const r = await runScript({
+    config: "title: [\n",
+    yq: { out: "null", err: "bad\u001b[2J file" },
+    yqBy: { [titleExprs.tag]: { out: "!!null", code: 1 } },
+    args: page,
+  });
+  assert.equal(r.code, 1, r.stderr);
+  assert.ok(!r.stderr.includes("\u001b"), JSON.stringify(r.stderr));
+  assert.ok(r.stderr.includes("(exit 1): bad[2J file"), JSON.stringify(r.stderr));
+  assert.equal(r.npmArgs, undefined);
+});
+
+test("exclude and title together pass both, after --sort and before the arguments", async () => {
+  const r = await runScript({
+    ...excludeOf("a", "b"),
+    yqBy: { ...excludeOf("a", "b").yqBy, ...titleOf("T t").yqBy },
+    yq: { out: "true" },
+    args: page,
+  });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--sort", "--exclude=a", "--exclude=b", "--title=T t", ...page]);
+});
+
+test("exclude alone passes no --title, title alone passes no --exclude", async () => {
+  const onlyExclude = await runScript({ ...excludeOf("a"), yq: { out: "null" }, args: page });
+  assert.deepEqual(onlyExclude.npmArgs, ["run", "links", "--", "--exclude=a", ...page]);
+  const onlyTitle = await runScript({ ...titleOf("T"), yq: { out: "null" }, args: page });
+  assert.deepEqual(onlyTitle.npmArgs, ["run", "links", "--", "--title=T", ...page]);
+});
+
+test("the temporary file is gone after a title error and after a title run", async () => {
+  const bad = await runScript({
+    config: "title: [a]\n",
+    yq: { out: "null" },
+    yqBy: { [titleExprs.tag]: { out: "!!seq" } },
+    args: page,
+  });
+  const ok = await runScript({ ...titleOf("T"), yq: { out: "null" }, args: page });
+  assert.equal(bad.code, 1, bad.stderr);
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.deepEqual([bad.tmpLeft, ok.tmpLeft], [[], []]);
+});
+
+test('exclude with an explicit title: "" passes the --exclude and no --title', async () => {
+  const r = await runScript({
+    config: "exclude: [a]\ntitle: ''\n",
+    yq: { out: "null" },
+    yqBy: { ...excludeOf("a").yqBy, ...titleOf("").yqBy },
+    args: page,
+  });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--exclude=a", ...page]);
+  assert.ok(!r.npmArgs?.some((a) => a.startsWith("--title")), String(r.npmArgs));
 });

@@ -18,10 +18,11 @@ export function escapeHtml(s: string): string {
     .replaceAll("'", "&#39;");
 }
 
-export function renderPage(links: string[]): string {
+export function renderPage(links: string[], opts?: { title?: string }): string {
+  const heading = opts?.title ? `<h1>${escapeHtml(opts.title)}</h1>\n` : "";
   const items = links.map((l) => `<li><a href="${escapeHtml(l)}">${escapeHtml(l)}</a></li>`).join("\n");
   const list = links.length === 0 ? "<ul></ul>" : `<ul>\n${items}\n</ul>`;
-  return `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>Links</title>\n</head>\n<body>\n${list}\n</body>\n</html>\n`;
+  return `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>Links</title>\n</head>\n<body>\n${heading}${list}\n</body>\n</html>\n`;
 }
 
 export function consoleText(links: string[]): string {

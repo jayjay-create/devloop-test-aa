@@ -1,7 +1,7 @@
 #!/bin/sh
 # Prints the distinct links of an HTML file and writes them as a page.
-# Usage: npm run links -- [--sort] [--count] [--exclude=GLOB] <html-file> [<output-page>]
-# --exclude=GLOB (repeatable, `=` form only) is passed on to node unchanged; scripts/links-config.sh uses it.
+# Usage: npm run links -- [--sort] [--count] [--exclude=GLOB] [--title=TEXT] <html-file> [<output-page>]
+# --exclude=GLOB (repeatable) and --title=TEXT, both in the `=` form only, are passed on to node unchanged; scripts/links-config.sh uses them.
 # npm appends its arguments after the whole script line, so they are handled here.
 
 # Names are printed with printf '%s', never echo: some shells' echo expands backslash sequences, so a
@@ -19,8 +19,8 @@ printable() {
   fi
 }
 
-# --sort, --count and --exclude=GLOB may stand anywhere; the other arguments keep their order by being rotated.
-# Any other --* is an error before htmlq is looked for. An --exclude=GLOB stays among the arguments for now
+# --sort, --count, --exclude=GLOB and --title=TEXT may stand anywhere; the other arguments keep their order by being rotated.
+# Any other --* is an error before htmlq is looked for. An --exclude=GLOB or --title=TEXT stays among the arguments for now
 # (it can never be taken for a file name: every --* is an option) and is picked out below.
 want_sort=""
 want_count=""
@@ -31,9 +31,9 @@ while [ "$n" -gt 0 ]; do
   case "$a" in
     --sort) want_sort=1 ;;
     --count) want_count=1 ;;
-    --exclude=*) set -- "$@" "$a" ;;
+    --exclude=* | --title=*) set -- "$@" "$a" ;;
     --*)
-      printf '%s\n' "error: unknown option: $(printable "$a") (only --sort, --count and --exclude=GLOB are supported)" >&2
+      printf '%s\n' "error: unknown option: $(printable "$a") (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)" >&2
       exit 2
       ;;
     *) set -- "$@" "$a" ;;
@@ -47,7 +47,7 @@ file=""
 page=""
 for a in "$@"; do
   case "$a" in
-    --exclude=*) ;;
+    --exclude=* | --title=*) ;;
     *)
       npos=$((npos + 1))
       if [ "$npos" -eq 1 ]; then file="$a"; fi
@@ -57,7 +57,7 @@ for a in "$@"; do
 done
 
 if [ "$npos" -lt 1 ]; then
-  echo "usage: npm run links -- [--sort] [--count] [--exclude=GLOB] <html-file> [<output-page>]" >&2
+  echo "usage: npm run links -- [--sort] [--count] [--exclude=GLOB] [--title=TEXT] <html-file> [<output-page>]" >&2
   exit 2
 fi
 
@@ -85,13 +85,13 @@ if ! htmlq --attribute href 'a[href], area[href]' < "$file" > "$tmp"; then
 fi
 
 # node gets the options that were given, then the output page if there is one.
-# Only the --exclude arguments stay in "$@"; the rest were read above.
+# Only the --exclude and --title arguments stay in "$@"; the rest were read above.
 n=$#
 while [ "$n" -gt 0 ]; do
   a="$1"
   shift
   case "$a" in
-    --exclude=*) set -- "$@" "$a" ;;
+    --exclude=* | --title=*) set -- "$@" "$a" ;;
   esac
   n=$((n - 1))
 done

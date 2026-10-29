@@ -26,14 +26,16 @@ export async function main(
   let sort = false;
   let count = false;
   const excludes: string[] = [];
+  let title = "";
   const positionals: string[] = [];
   for (const arg of argv) {
     if (arg === "--sort") sort = true;
     else if (arg === "--count") count = true;
     else if (arg.startsWith("--exclude=")) excludes.push(arg.slice("--exclude=".length));
+    else if (arg.startsWith("--title=")) title = arg.slice("--title=".length);
     else if (arg.startsWith("--")) {
       stderr.write(
-        `error: unknown option: ${sanitizeForStderr(arg)} (only --sort, --count and --exclude=GLOB are supported)\n`,
+        `error: unknown option: ${sanitizeForStderr(arg)} (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n`,
       );
       return 2;
     } else positionals.push(arg);
@@ -55,7 +57,7 @@ export async function main(
   }
   const target = positionals[0] ?? "links.html";
   try {
-    await writeFile(target, renderPage(links));
+    await writeFile(target, renderPage(links, { title }));
   } catch (e) {
     stderr.write(`error: cannot write ${sanitizeForStderr(target)}: ${sanitizeForStderr(e)}\n`);
     return 1;
