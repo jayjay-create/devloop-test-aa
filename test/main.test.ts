@@ -166,7 +166,10 @@ test("an unknown option returns 2 with one stderr line and writes nothing", asyn
   };
   const f = fakes(input);
   assert.equal(await f.run(["--foo"]), 2);
-  assert.equal(f.err, "error: unknown option: --foo (only --sort, --count and --exclude=GLOB are supported)\n");
+  assert.equal(
+    f.err,
+    "error: unknown option: --foo (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n",
+  );
   assert.equal(f.out, "");
   assert.deepEqual(Object.keys(f.written), []);
   assert.equal(read, false);
@@ -183,7 +186,10 @@ test("an unknown option after --sort and a page name is still rejected", async (
 test("control characters in an unknown option do not reach stderr", async () => {
   const f = fakes("a\n");
   assert.equal(await f.run([`--x\n\u001b[31m`]), 2);
-  assert.equal(f.err, "error: unknown option: --x [31m (only --sort, --count and --exclude=GLOB are supported)\n");
+  assert.equal(
+    f.err,
+    "error: unknown option: --x [31m (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n",
+  );
   assert.equal(f.err.trimEnd().split("\n").length, 1);
   assert.ok(!/[\p{Cc}\p{Zl}\p{Zp}]/u.test(f.err.trimEnd()));
   assert.equal(f.out, "");
@@ -312,7 +318,10 @@ test("--exclude=* leaves nothing: no console text, --count prints 0, the page ho
 test("a bare --exclude exits 2 as an unknown option and writes nothing", async () => {
   const f = fakes("a\n");
   assert.equal(await f.run(["--exclude"]), 2);
-  assert.equal(f.err, "error: unknown option: --exclude (only --sort, --count and --exclude=GLOB are supported)\n");
+  assert.equal(
+    f.err,
+    "error: unknown option: --exclude (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n",
+  );
   assert.equal(f.out, "");
   assert.deepEqual(Object.keys(f.written), []);
 });
@@ -359,4 +368,56 @@ test("pageHrefs decodes every entity once: a link that contains &lt; stays as ty
   assert.equal(await f.run(["--exclude=a"]), 0);
   assert.ok(f.written["links.html"].includes("x?q=&amp;lt;&amp;&quot;&#39;&lt;&gt;"));
   assert.deepEqual(pageHrefs(f.written["links.html"]), [link]);
+});
+
+test("--title=Foo puts the h1 on the page and leaves console text and --count as without it", async () => {
+  const input = "a\nb\na\n";
+  const plain = fakes(input);
+  assert.equal(await plain.run([]), 0);
+  const f = fakes(input);
+  assert.equal(await f.run(["--title=Foo"]), 0);
+  assert.equal(f.out, plain.out);
+  assert.equal(f.err, "");
+  const page = f.written["links.html"];
+  assert.ok(page.includes("<h1>Foo</h1>"), page);
+  assert.ok(page.indexOf("<h1>Foo</h1>") < page.indexOf("<ul>"), page);
+  const counted = fakes(input);
+  assert.equal(await counted.run(["--count", "--title=Foo"]), 0);
+  assert.equal(counted.out, "2\n");
+  assert.ok(counted.written["links.html"].includes("<h1>Foo</h1>"));
+});
+
+test("--title= writes no h1, the page is as without --title", async () => {
+  const plain = fakes("a\n");
+  assert.equal(await plain.run([]), 0);
+  const f = fakes("a\n");
+  assert.equal(await f.run(["--title="]), 0);
+  assert.equal(f.written["links.html"], plain.written["links.html"]);
+  assert.ok(!f.written["links.html"].includes("<h1>"));
+});
+
+test("the title keeps spaces, a leading dash, an equals sign and is escaped on the page only", async () => {
+  const f = fakes("a\n");
+  assert.equal(await f.run(['--title=-A <b> & "c" = d', "out.html"]), 0);
+  assert.equal(f.out, "a\n");
+  assert.ok(f.written["out.html"].includes("<h1>-A &lt;b&gt; &amp; &quot;c&quot; = d</h1>"), f.written["out.html"]);
+});
+
+test("a bare --title exits 2 as an unknown option and writes nothing", async () => {
+  const f = fakes("a\n");
+  assert.equal(await f.run(["--title"]), 2);
+  assert.equal(
+    f.err,
+    "error: unknown option: --title (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n",
+  );
+  assert.equal(f.out, "");
+  assert.deepEqual(Object.keys(f.written), []);
+});
+
+test("--title and --exclude together both take effect", async () => {
+  const f = fakes("a.pdf\nb\n");
+  assert.equal(await f.run(["--exclude=*.pdf", "--title=T"]), 0);
+  assert.equal(f.out, "b\n");
+  const page = f.written["links.html"];
+  assert.ok(page.includes("<h1>T</h1>") && !page.includes("a.pdf"), page);
 });
