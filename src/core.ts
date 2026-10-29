@@ -27,3 +27,35 @@ export function renderPage(links: string[]): string {
 export function consoleText(links: string[]): string {
   return links.join("\n");
 }
+
+// A glob over the whole text, case-sensitive. Only `*` is special (any text, none included, newlines too);
+// every other character, `?` and `[` among them, stands for itself. Matched by a loop over the parts, never
+// by a regular expression built from the pattern, so a crafted pattern cannot make it take exponential
+// time: at worst the work is the length of the pattern times the length of the text.
+export function matchesGlob(pattern: string, href: string): boolean {
+  let patternIndex = 0;
+  let hrefIndex = 0;
+  // starIndex: the index of the last `*` in the pattern (-1 = none yet). starHrefIndex: the position in href
+  // where the text taken by that `*` ends for now. A mismatch after a `*` backtracks: the `*` takes one more
+  // character of href and the pattern after it is tried again from there.
+  let starIndex = -1;
+  let starHrefIndex = 0;
+  while (hrefIndex < href.length) {
+    if (patternIndex < pattern.length && pattern[patternIndex] === "*") {
+      starIndex = patternIndex++;
+      starHrefIndex = hrefIndex;
+    } else if (patternIndex < pattern.length && pattern[patternIndex] === href[hrefIndex]) {
+      patternIndex++;
+      hrefIndex++;
+    } else if (starIndex !== -1) {
+      patternIndex = starIndex + 1;
+      hrefIndex = ++starHrefIndex;
+    } else return false;
+  }
+  while (patternIndex < pattern.length && pattern[patternIndex] === "*") patternIndex++;
+  return patternIndex === pattern.length;
+}
+
+export function applyExclude(links: string[], patterns: string[]): string[] {
+  return links.filter((link) => !patterns.some((p) => matchesGlob(p, link)));
+}

@@ -1,6 +1,7 @@
 #!/bin/sh
 # Prints the distinct links of an HTML file and writes them as a page.
-# Usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]
+# Usage: npm run links -- [--sort] [--count] [--exclude=GLOB] <html-file> [<output-page>]
+# --exclude=GLOB (repeatable, `=` form only) is passed on to node unchanged; scripts/links-config.sh uses it.
 # npm appends its arguments after the whole script line, so they are handled here.
 
 # Names are printed with printf '%s', never echo: some shells' echo expands backslash sequences, so a
@@ -18,8 +19,9 @@ printable() {
   fi
 }
 
-# --sort and --count may stand anywhere; the other arguments keep their order by being rotated.
-# Any other --* is an error before htmlq is looked for.
+# --sort, --count and --exclude=GLOB may stand anywhere; the other arguments keep their order by being rotated.
+# Any other --* is an error before htmlq is looked for. An --exclude=GLOB stays among the arguments for now
+# (it can never be taken for a file name: every --* is an option) and is picked out below.
 want_sort=""
 want_count=""
 n=$#
@@ -29,8 +31,9 @@ while [ "$n" -gt 0 ]; do
   case "$a" in
     --sort) want_sort=1 ;;
     --count) want_count=1 ;;
+    --exclude=*) set -- "$@" "$a" ;;
     --*)
-      printf '%s\n' "error: unknown option: $(printable "$a") (only --sort and --count are supported)" >&2
+      printf '%s\n' "error: unknown option: $(printable "$a") (only --sort, --count and --exclude=GLOB are supported)" >&2
       exit 2
       ;;
     *) set -- "$@" "$a" ;;
@@ -38,8 +41,23 @@ while [ "$n" -gt 0 ]; do
   n=$((n - 1))
 done
 
-if [ $# -lt 1 ]; then
-  echo "usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]" >&2
+# The first two other arguments are the HTML file and the output page.
+npos=0
+file=""
+page=""
+for a in "$@"; do
+  case "$a" in
+    --exclude=*) ;;
+    *)
+      npos=$((npos + 1))
+      if [ "$npos" -eq 1 ]; then file="$a"; fi
+      if [ "$npos" -eq 2 ]; then page="$a"; fi
+      ;;
+  esac
+done
+
+if [ "$npos" -lt 1 ]; then
+  echo "usage: npm run links -- [--sort] [--count] [--exclude=GLOB] <html-file> [<output-page>]" >&2
   exit 2
 fi
 
@@ -48,8 +66,8 @@ if ! command -v htmlq >/dev/null 2>&1; then
   exit 1
 fi
 
-if [ ! -f "$1" ] || [ ! -r "$1" ]; then
-  printf '%s\n' "error: cannot read HTML file: $(printable "$1")" >&2
+if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+  printf '%s\n' "error: cannot read HTML file: $(printable "$file")" >&2
   exit 1
 fi
 
@@ -61,20 +79,23 @@ tmp="$(mktemp)" || exit 1
 trap 'rm -f "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM
 
-if ! htmlq --attribute href 'a[href], area[href]' < "$1" > "$tmp"; then
-  printf '%s\n' "error: htmlq failed on: $(printable "$1")" >&2
+if ! htmlq --attribute href 'a[href], area[href]' < "$file" > "$tmp"; then
+  printf '%s\n' "error: htmlq failed on: $(printable "$file")" >&2
   exit 1
 fi
 
 # node gets the options that were given, then the output page if there is one.
-have_page=""
-page=""
-if [ $# -ge 2 ]; then
-  have_page=1
-  page="$2"
-fi
-set --
-if [ -n "$want_sort" ]; then set -- "$@" --sort; fi
-if [ -n "$want_count" ]; then set -- "$@" --count; fi
-if [ -n "$have_page" ]; then set -- "$@" "$page"; fi
+# Only the --exclude arguments stay in "$@"; the rest were read above.
+n=$#
+while [ "$n" -gt 0 ]; do
+  a="$1"
+  shift
+  case "$a" in
+    --exclude=*) set -- "$@" "$a" ;;
+  esac
+  n=$((n - 1))
+done
+if [ -n "$want_count" ]; then set -- --count "$@"; fi
+if [ -n "$want_sort" ]; then set -- --sort "$@"; fi
+if [ "$npos" -ge 2 ]; then set -- "$@" "$page"; fi
 node "$bin" "$@" < "$tmp"

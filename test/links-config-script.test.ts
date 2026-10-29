@@ -29,6 +29,9 @@ type Setup = {
   // What the stub yq prints and its exit code; undefined yq = no yq on the PATH at all.
   // `err` is what it prints on stderr.
   yq?: { out: string; code?: number; err?: string };
+  // Answers of the stub yq per expression (the first argument) other than `.sort`; an expression that is not
+  // listed gets the answer of a config without the key: `!!null` for the type, `0` for the newline count, nothing otherwise.
+  yqBy?: Record<string, { out: string; code?: number }>;
   args?: string[];
   cwdOther?: boolean;
   npmCode?: number;
@@ -40,6 +43,10 @@ type Outcome = Result & {
   npmArgs: string[] | undefined;
   yqCalled: boolean;
   yqArgs: string[] | undefined;
+  // The expression of every yq call, in order.
+  yqExprs: string[];
+  // The file argument of every yq call, in order.
+  yqFiles: string[];
   // The project root the run used; it is removed when runScript returns, so only its name is of use.
   dir: string;
   // Files the script left in its TMPDIR.
@@ -75,12 +82,31 @@ async function runScript(s: Setup): Promise<Outcome> {
     );
     await chmod(join(dir, "bin", "npm"), 0o755);
     if (s.yq) {
+      // Answers per expression: files in bin/, chosen by a case on the first argument.
+      const by: Record<string, { out: string; code?: number }> = {
+        ".exclude | tag": { out: "!!null" },
+        '[.exclude[] | select(contains("\\n"))] | length': { out: "0" },
+        ...s.yqBy,
+      };
+      let cases = "";
+      let i = 0;
+      for (const [expr, answer] of Object.entries(by)) {
+        const file = join(dir, "bin", `yq-answer-${String(i++)}`);
+        await writeFile(file, `${answer.out}\n`);
+        cases += `  '${expr.replaceAll("'", "'\\''")}') cat "${file}"; exit ${String(answer.code ?? 0)} ;;\n`;
+      }
       await writeFile(
         join(dir, "bin", "yq"),
-        `#!/bin/sh\nfor a in "$@"; do printf '%s\\n' "$a"; done > "${dir}/yq-args"\n` +
+        // yq-args keeps the arguments of the first call; yq-exprs lists the expression of every call.
+        `#!/bin/sh\nif [ ! -f "${dir}/yq-args" ]; then for a in "$@"; do printf '%s\\n' "$a"; done > "${dir}/yq-args"; fi\n` +
+          `printf '%s\\n' "$1" >> "${dir}/yq-exprs"\n` +
+          // Only $2: the other arguments are constants of the expressions, asserted through yq-exprs.
+          `printf '%s\\n' "$2" >> "${dir}/yq-files"\n` +
           // The names in TMPDIR while yq runs; a glob, since ls is not on the PATH of the run.
           `for f in "$TMPDIR"/*; do printf '%s\\n' "\${f##*/}"; done > "${dir}/yq-tmp"\n` +
-          `printf '%s\\n' "$YQ_ERR" >&2\nprintf '%s\\n' "$YQ_OUT"\nexit "$YQ_CODE"\n`,
+          `printf '%s\\n' "$YQ_ERR" >&2\n` +
+          `case "$1" in\n${cases}esac\n` +
+          `case "$1" in\n  .sort) printf '%s\\n' "$YQ_OUT"; exit "$YQ_CODE" ;;\nesac\nexit 0\n`,
       );
       await chmod(join(dir, "bin", "yq"), 0o755);
     }
@@ -127,6 +153,8 @@ async function runScript(s: Setup): Promise<Outcome> {
       npmArgs: lines(await read("npm-args")),
       yqCalled: yqArgs !== undefined,
       yqArgs,
+      yqExprs: lines(await read("yq-exprs")) ?? [],
+      yqFiles: lines(await read("yq-files")) ?? [],
       dir,
       tmpLeft: await readdir(join(dir, "tmp")),
       tmpDuring: lines(await read("yq-tmp")),
@@ -297,4 +325,178 @@ test("a control character in the value is not printed raw", async () => {
 test("package.json has the links:config script", async () => {
   const pkg = JSON.parse(await readFile(packageJson, "utf8"));
   assert.equal(pkg.scripts["links:config"], "sh scripts/links-config.sh");
+});
+
+const patternExprs = {
+  tag: ".exclude | tag",
+  items: ".exclude[] | tag",
+  newline: '[.exclude[] | select(contains("\\n"))] | length',
+  list: ".exclude[]",
+};
+
+// A config with an exclude list as the stub yq would read it.
+function excludeOf(...patterns: string[]): Pick<Setup, "config" | "yqBy"> {
+  return {
+    config: `exclude: ${JSON.stringify(patterns)}\n`,
+    yqBy: {
+      [patternExprs.tag]: { out: "!!seq" },
+      [patternExprs.items]: { out: patterns.map(() => "!!str").join("\n") },
+      [patternExprs.newline]: { out: "0" },
+      [patternExprs.list]: { out: patterns.join("\n") },
+    },
+  };
+}
+
+test("exclude: [a, b] passes one --exclude per pattern, after --sort and before the arguments", async () => {
+  const r = await runScript({ ...excludeOf("a", "b"), yq: { out: "true" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--sort", "--exclude=a", "--exclude=b", ...page]);
+});
+
+test("exclude without sort passes only the --exclude arguments", async () => {
+  const r = await runScript({ ...excludeOf("*.pdf"), yq: { out: "null" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--exclude=*.pdf", ...page]);
+});
+
+test("patterns with spaces, quotes, backslashes and a leading space stay single arguments", async () => {
+  const patterns = ["a b*", ' "q" ', "x\\y*", "*'z"];
+  const r = await runScript({ ...excludeOf(...patterns), yq: { out: "false" }, args: spaced });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...patterns.map((p) => `--exclude=${p}`), ...spaced]);
+});
+
+test("yq is asked for the type of exclude, the type of its items, newlines in them and then the patterns", async () => {
+  const r = await runScript({ ...excludeOf("a"), yq: { out: "false" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.yqExprs, [".sort", patternExprs.tag, patternExprs.items, patternExprs.newline, patternExprs.list]);
+  assert.equal(r.yqArgs?.[0], ".sort");
+  // Every call reads the config of the project root, not only the first.
+  assert.deepEqual(r.yqFiles, Array(5).fill(join(r.dir, "links.config.yaml")));
+});
+
+test("exclude: [] (a list without items) passes nothing", async () => {
+  const r = await runScript({
+    config: "exclude: []\n",
+    yq: { out: "null" },
+    yqBy: { [patternExprs.tag]: { out: "!!seq" } },
+    args: page,
+  });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
+});
+
+test("a missing exclude key passes nothing and asks no further than its type", async () => {
+  const r = await runScript({ config: "sort: false\n", yq: { out: "false" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
+  assert.deepEqual(r.yqExprs, [".sort", patternExprs.tag]);
+});
+
+test("exclude that is not a list is an error naming the file and the key; npm is not called", async () => {
+  for (const tag of ["!!int", "!!str", "!!map", "!!bool"]) {
+    const r = await runScript({
+      config: "exclude: 5\n",
+      yq: { out: "null" },
+      yqBy: { [patternExprs.tag]: { out: tag } },
+      args: page,
+    });
+    assert.equal(r.code, 1, r.stderr);
+    assert.equal(r.stderr, "error: links.config.yaml: exclude must be a list of text\n", tag);
+    assert.equal(r.npmArgs, undefined);
+    assert.equal(r.stdout, "");
+  }
+});
+
+test("exclude with an item that is not text is an error naming the file and the key; npm is not called", async () => {
+  const r = await runScript({
+    config: "exclude: [1]\n",
+    yq: { out: "null" },
+    yqBy: { [patternExprs.tag]: { out: "!!seq" }, [patternExprs.items]: { out: "!!str\n!!int" } },
+    args: page,
+  });
+  assert.equal(r.code, 1, r.stderr);
+  assert.equal(r.stderr, "error: links.config.yaml: exclude must be a list of text\n");
+  assert.equal(r.npmArgs, undefined);
+});
+
+test("a pattern with a newline is an error (exit 1) naming the key; npm is not called", async () => {
+  const r = await runScript({
+    ...excludeOf("a", "b"),
+    yq: { out: "null" },
+    yqBy: {
+      [patternExprs.tag]: { out: "!!seq" },
+      [patternExprs.items]: { out: "!!str\n!!str" },
+      [patternExprs.newline]: { out: "1" },
+      [patternExprs.list]: { out: "a\nb" },
+    },
+    args: page,
+  });
+  assert.equal(r.code, 1, r.stderr);
+  assert.equal(r.stderr, "error: links.config.yaml: an exclude pattern must not contain a newline\n");
+  assert.equal(r.npmArgs, undefined);
+});
+
+test("a failing yq on exclude is an error with its message even when it printed a valid answer; npm is not called", async () => {
+  const r = await runScript({
+    config: "exclude: [\n",
+    yq: { out: "null", err: "bad file" },
+    yqBy: { [patternExprs.tag]: { out: "!!null", code: 1 } },
+    args: page,
+  });
+  assert.equal(r.code, 1, r.stderr);
+  assert.ok(r.stderr.includes("yq failed on links.config.yaml (exit 1): bad file"), r.stderr);
+  assert.equal(r.npmArgs, undefined);
+});
+
+test("a control character in the message of a failing yq on exclude is not printed raw", async () => {
+  const failing = await runScript({
+    config: "exclude: [\n",
+    yq: { out: "null", err: "bad\u001b[2J file" },
+    yqBy: { [patternExprs.tag]: { out: "!!null", code: 1 } },
+    args: page,
+  });
+  assert.equal(failing.code, 1, failing.stderr);
+  assert.ok(!failing.stderr.includes("\u001b"), JSON.stringify(failing.stderr));
+  assert.ok(failing.stderr.includes("(exit 1): bad[2J file"), JSON.stringify(failing.stderr));
+  assert.equal(failing.npmArgs, undefined);
+  assert.equal(failing.stdout, "");
+});
+
+test("a control character inside a pattern reaches --exclude= exactly as typed", async () => {
+  const patterns = ["a\u001b[2Jb*", "x\ty*"];
+  const r = await runScript({ ...excludeOf(...patterns), yq: { out: "false" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...patterns.map((p) => `--exclude=${p}`), ...page]);
+});
+
+test("no config file: no exclude arguments and yq is never called", async () => {
+  const r = await runScript({ yq: { out: "true" }, args: page });
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
+  assert.deepEqual(r.yqExprs, []);
+});
+
+test("the temporary file is gone after an exclude error and after a pattern run", async () => {
+  const bad = await runScript({
+    config: "exclude: 5\n",
+    yq: { out: "null" },
+    yqBy: { [patternExprs.tag]: { out: "!!int" } },
+    args: page,
+  });
+  const ok = await runScript({ ...excludeOf("a"), yq: { out: "false" }, args: page });
+  assert.equal(bad.code, 1, bad.stderr);
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.deepEqual([bad.tmpLeft, ok.tmpLeft], [[], []]);
+});
+
+test("an empty pattern is passed as --exclude= wherever it stands in the list (alone, first, last, in the middle, repeated)", async () => {
+  for (const patterns of [[""], ["a", ""], ["", "a"], ["", ""], ["a", "", "b"]]) {
+    const r = await runScript({ ...excludeOf(...patterns), yq: { out: "false" }, args: page });
+    assert.equal(r.code, 0, `${JSON.stringify(patterns)}: ${r.stderr}`);
+    assert.deepEqual(
+      r.npmArgs,
+      ["run", "links", "--", ...patterns.map((p) => `--exclude=${p}`), ...page],
+      JSON.stringify(patterns),
+    );
+  }
 });

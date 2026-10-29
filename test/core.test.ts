@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseLinks, distinct, escapeHtml, renderPage, consoleText } from "../src/core.ts";
+import { parseLinks, distinct, escapeHtml, renderPage, consoleText, matchesGlob, applyExclude } from "../src/core.ts";
 
 test("distinct keeps the first occurrence in order", () => {
   assert.deepEqual(distinct(["b", "a", "b"]), ["b", "a"]);
@@ -44,4 +44,87 @@ test("escapeHtml escapes & < > \" '", () => {
 test("consoleText([]) is the empty string, otherwise newline-joined", () => {
   assert.equal(consoleText([]), "");
   assert.equal(consoleText(["a", "b"]), "a\nb");
+});
+
+test("matchesGlob: * matches any text, case-sensitive: *.pdf matches a/b.pdf and not a/b.PDF", () => {
+  assert.equal(matchesGlob("*.pdf", "a/b.pdf"), true);
+  assert.equal(matchesGlob("*.pdf", "a/b.PDF"), false);
+});
+
+test("matchesGlob matches the whole href, not a part of it", () => {
+  assert.equal(matchesGlob("*.pdf", "a.pdf.html"), false);
+  assert.equal(matchesGlob("b.pdf", "a/b.pdf"), false);
+  assert.equal(matchesGlob("a/*", "xa/b"), false);
+});
+
+test("matchesGlob: regex metacharacters are literal", () => {
+  assert.equal(matchesGlob("a.b", "axb"), false);
+  assert.equal(matchesGlob("a.b", "a.b"), true);
+  assert.equal(matchesGlob("a+b(c)[d]{e}|f^$\\", "a+b(c)[d]{e}|f^$\\"), true);
+  assert.equal(matchesGlob("a+", "aa"), false);
+});
+
+test("matchesGlob: a hyphen, a slash and non-ASCII text are literal", () => {
+  assert.equal(matchesGlob("a-b/c*\u00e4", "a-b/cxx\u00e4"), true);
+  assert.equal(matchesGlob("a-b", "a-c"), false);
+});
+
+test("matchesGlob: ? and [ are literal", () => {
+  assert.equal(matchesGlob("a?", "a?"), true);
+  assert.equal(matchesGlob("a?", "ab"), false);
+  assert.equal(matchesGlob("[ab]", "a"), false);
+  assert.equal(matchesGlob("[ab]", "[ab]"), true);
+});
+
+test("matchesGlob: a pattern without * matches only the identical text", () => {
+  assert.equal(matchesGlob("https://a.org/x", "https://a.org/x"), true);
+  assert.equal(matchesGlob("https://a.org/x", "https://a.org/x/"), false);
+});
+
+test("matchesGlob: * alone matches every link, including the empty text and newlines", () => {
+  assert.equal(matchesGlob("*", "anything/at?all"), true);
+  assert.equal(matchesGlob("*", ""), true);
+  assert.equal(matchesGlob("a*b", "a\nb"), true);
+  assert.equal(matchesGlob("**", "x"), true);
+});
+
+test("applyExclude keeps the order of the remaining links", () => {
+  assert.deepEqual(applyExclude(["c", "a.pdf", "b", "d.pdf", "a"], ["*.pdf"]), ["c", "b", "a"]);
+});
+
+test("applyExclude removes a link that matches any one of several patterns", () => {
+  assert.deepEqual(applyExclude(["x.pdf", "y.zip", "z.html"], ["*.pdf", "*.zip"]), ["z.html"]);
+});
+
+test("applyExclude with no patterns returns the list unchanged", () => {
+  assert.deepEqual(applyExclude(["a", "b"], []), ["a", "b"]);
+});
+
+test("matchesGlob: many * against a long non-matching text finishes quickly (no exponential backtracking)", () => {
+  const started = performance.now();
+  assert.equal(matchesGlob("*a*a*a*a*a*b", "a".repeat(5000)), false);
+  const ms = performance.now() - started;
+  assert.ok(ms < 1000, `took ${String(ms)} ms`);
+});
+
+test("matchesGlob: backtracking and edge cases", () => {
+  const cases: [string, string, boolean][] = [
+    ["*ab", "aab", true],
+    ["*ab*", "aab", true],
+    ["a*b*c", "abcbc", true],
+    ["a*b*c", "abxc", true], // the second * takes "x"
+    ["a*b*c", "abxd", false],
+    ["a*b*c", "acb", false],
+    ["*a*b", "ab ab", true],
+    ["a*", "a", true],
+    ["**", "", true],
+    ["", "", true],
+    ["", "a", false],
+    ["abc", "ab", false],
+    ["ab*c", "ab", false],
+    ["*a*a*b", "aaab", true],
+  ];
+  for (const [pattern, href, expected] of cases) {
+    assert.equal(matchesGlob(pattern, href), expected, `${JSON.stringify(pattern)} vs ${JSON.stringify(href)}`);
+  }
 });

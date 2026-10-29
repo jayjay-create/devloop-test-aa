@@ -1,4 +1,4 @@
-import { parseLinks, distinct, renderPage, consoleText } from "./core.ts";
+import { parseLinks, distinct, applyExclude, renderPage, consoleText } from "./core.ts";
 
 type Writable = { write(s: string): unknown };
 
@@ -25,12 +25,16 @@ export async function main(
 ): Promise<number> {
   let sort = false;
   let count = false;
+  const excludes: string[] = [];
   const positionals: string[] = [];
   for (const arg of argv) {
     if (arg === "--sort") sort = true;
     else if (arg === "--count") count = true;
+    else if (arg.startsWith("--exclude=")) excludes.push(arg.slice("--exclude=".length));
     else if (arg.startsWith("--")) {
-      stderr.write(`error: unknown option: ${sanitizeForStderr(arg)} (only --sort and --count are supported)\n`);
+      stderr.write(
+        `error: unknown option: ${sanitizeForStderr(arg)} (only --sort, --count and --exclude=GLOB are supported)\n`,
+      );
       return 2;
     } else positionals.push(arg);
   }
@@ -41,7 +45,7 @@ export async function main(
     stderr.write(`error: cannot read stdin: ${sanitizeForStderr(e)}\n`);
     return 1;
   }
-  const distinctLinks = distinct(parseLinks(input));
+  const distinctLinks = applyExclude(distinct(parseLinks(input)), excludes);
   // The default sort compares UTF-16 code units: uppercase before lowercase, the same on every machine (not localeCompare).
   const links = sort ? [...distinctLinks].sort() : distinctLinks;
   if (count) stdout.write(`${String(links.length)}\n`);

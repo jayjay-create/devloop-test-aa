@@ -1,5 +1,6 @@
 #!/bin/sh
-# Runs npm run links with --sort when links.config.yaml in the project root says `sort: true`.
+# Runs npm run links with the settings of links.config.yaml in the project root: --sort when it says
+# `sort: true`, and one --exclude=<pattern> for every pattern of its `exclude` list (globs: * is any text).
 # Usage: npm run links:config -- <html-file> [<output-page>]
 # Needs yq (Mike Farah's) when the config file exists: brew install yq
 
@@ -19,6 +20,8 @@ printable() {
 root="$(cd -- "$(dirname -- "$0")/.." && pwd)" || exit 1
 config="$root/links.config.yaml"
 value="null"
+patterns=""
+count=0
 
 if [ -f "$config" ]; then
   if ! command -v yq >/dev/null 2>&1; then
@@ -39,17 +42,83 @@ if [ -f "$config" ]; then
     echo "error: cannot create a temporary file to read yq's messages (check TMPDIR)" >&2
     exit 1
   }
-  value="$(yq '.sort' "$config" 2>"$errfile")"
-  status=$?
-  detail="$(cat "$errfile")"
+  # Runs yq with one expression on the config file and leaves its answer in cfg_out. Not run in a
+  # command substitution: an exit there would only end the substitution, and the script would go on.
+  cfg_get() {
+    cfg_out="$(yq "$1" "$config" 2>"$errfile")"
+    status=$?
+    detail="$(cat "$errfile")"
+    if [ "$status" -ne 0 ]; then
+      [ -n "$detail" ] || detail="$cfg_out"
+      printf '%s\n' "error: yq failed on links.config.yaml (exit $status): $(printable "$detail")" >&2
+      exit 1
+    fi
+  }
+
+  cfg_get '.sort'
+  value="$cfg_out"
+
+  # exclude is nothing or a list of text. The type of the list and of every item are asked before the
+  # patterns, so a number or a map never becomes an --exclude= argument.
+  cfg_get '.exclude | tag'
+  exclude_tag="$cfg_out"
+  case "$exclude_tag" in
+    '!!null') ;;
+    '!!seq')
+      cfg_get '.exclude[] | tag'
+      # An empty list prints nothing; a here-document would still give the loop one empty line.
+      # The loop counts the items: the count is what reads the patterns below, because the command
+      # substitution strips trailing newlines and so loses trailing empty patterns.
+      if [ -n "$cfg_out" ]; then
+        while IFS= read -r item_tag; do
+          if [ "$item_tag" != '!!str' ]; then
+            echo "error: links.config.yaml: exclude must be a list of text" >&2
+            exit 1
+          fi
+          count=$((count + 1))
+        done <<EOF
+$cfg_out
+EOF
+      fi
+      # yq prints one pattern per line, so a pattern with a newline would read as two.
+      cfg_get '[.exclude[] | select(contains("\n"))] | length'
+      if [ "$cfg_out" != "0" ]; then
+        echo "error: links.config.yaml: an exclude pattern must not contain a newline" >&2
+        exit 1
+      fi
+      cfg_get '.exclude[]'
+      patterns="$cfg_out"
+      ;;
+    *)
+      echo "error: links.config.yaml: exclude must be a list of text" >&2
+      exit 1
+      ;;
+  esac
+
+  # The --exclude arguments go in front of the user's arguments: appended behind them, then the
+  # user's arguments are moved behind the new ones.
+  if [ "$count" -gt 0 ]; then
+    n=$#
+    i=0
+    # Exactly $count patterns: a read that finds no line left is a trailing empty pattern.
+    while [ "$i" -lt "$count" ]; do
+      IFS= read -r pattern || pattern=""
+      set -- "$@" "--exclude=$pattern"
+      i=$((i + 1))
+    done <<EOF
+$patterns
+EOF
+    while [ "$n" -gt 0 ]; do
+      a="$1"
+      shift
+      set -- "$@" "$a"
+      n=$((n - 1))
+    done
+  fi
+
   # The file goes before the exec below, which replaces the shell and so never runs the EXIT trap.
   rm -f "$errfile"
   trap - EXIT HUP INT TERM
-  if [ "$status" -ne 0 ]; then
-    [ -n "$detail" ] || detail="$value"
-    printf '%s\n' "error: yq failed on links.config.yaml (exit $status): $(printable "$detail")" >&2
-    exit 1
-  fi
 fi
 
 case "$value" in

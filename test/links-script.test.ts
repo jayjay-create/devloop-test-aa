@@ -202,7 +202,7 @@ test("a file name made only of control characters is reported without them", { s
 });
 
 const sortedLinks = [...expectedLinks].sort();
-const usageLine = "usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]";
+const usageLine = "usage: npm run links -- [--sort] [--count] [--exclude=GLOB] <html-file> [<output-page>]";
 
 // The link texts of the page's <li>s in page order.
 function pageLinks(html: string): string[] {
@@ -273,7 +273,7 @@ test("an unknown option exits 2 with one stderr line naming it and writes no pag
   try {
     const r = await run(["--bogus", sample], process.env, dir);
     assert.equal(r.code, 2, r.stderr);
-    assert.equal(r.stderr, "error: unknown option: --bogus (only --sort and --count are supported)\n");
+    assert.equal(r.stderr, "error: unknown option: --bogus (only --sort, --count and --exclude=GLOB are supported)\n");
     assert.equal(r.stdout, "");
     await assert.rejects(readFile(join(dir, "links.html"), "utf8"), { code: "ENOENT" });
   } finally {
@@ -284,13 +284,16 @@ test("an unknown option exits 2 with one stderr line naming it and writes no pag
 test("control characters in an unknown option do not reach stderr", async () => {
   const r = await run([sample, "--bad\u001b[31m\nname"]);
   assert.equal(r.code, 2, r.stderr);
-  assert.equal(r.stderr, "error: unknown option: --bad[31mname (only --sort and --count are supported)\n");
+  assert.equal(
+    r.stderr,
+    "error: unknown option: --bad[31mname (only --sort, --count and --exclude=GLOB are supported)\n",
+  );
 });
 
 test("a backslash sequence in an unknown option is printed as typed, not expanded", async () => {
   const r = await run(["--\\033[2J", sample]);
   assert.equal(r.code, 2, r.stderr);
-  assert.equal(r.stderr, "error: unknown option: --\\033[2J (only --sort and --count are supported)\n");
+  assert.equal(r.stderr, "error: unknown option: --\\033[2J (only --sort, --count and --exclude=GLOB are supported)\n");
 });
 
 test("an unknown option after valid arguments or beside --sort is still rejected and writes no page", async () => {
@@ -302,7 +305,7 @@ test("an unknown option after valid arguments or beside --sort is still rejected
     ]) {
       const r = await run(args, process.env, dir);
       assert.equal(r.code, 2, r.stderr);
-      assert.equal(r.stderr, "error: unknown option: --nope (only --sort and --count are supported)\n");
+      assert.equal(r.stderr, "error: unknown option: --nope (only --sort, --count and --exclude=GLOB are supported)\n");
       assert.equal(r.stdout, "");
       await assert.rejects(readFile(join(dir, "page.html"), "utf8"), { code: "ENOENT" });
       await assert.rejects(readFile(join(dir, "links.html"), "utf8"), { code: "ENOENT" });
@@ -321,7 +324,7 @@ test("an unknown option is rejected before htmlq is looked for", async () => {
     const r = await run(["--bogus", sample], { ...process.env, PATH: dir }, dir);
     assert.equal(r.code, 2, r.stderr);
     assert.match(r.stderr, /--bogus/);
-    assert.match(r.stderr, /\(only --sort and --count are supported\)/);
+    assert.match(r.stderr, /\(only --sort, --count and --exclude=GLOB are supported\)/);
     assert.doesNotMatch(r.stderr, /htmlq/);
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -395,4 +398,40 @@ test("--count together with --sort: both reach node", { skip: skipNoHtmlq }, asy
 test("without --count node does not get it", { skip: skipNoHtmlq }, async () => {
   assert.deepEqual(await runWithStubNode([sample]), [], "no options");
   assert.deepEqual(await runWithStubNode(["--sort", sample]), ["--sort"], "--sort only");
+});
+
+test("--exclude=GLOB reaches node unchanged, once per option and in order, before the page", {
+  skip: skipNoHtmlq,
+}, async () => {
+  assert.deepEqual(await runWithStubNode(["--exclude=*.pdf", sample]), ["--exclude=*.pdf"]);
+  assert.deepEqual(await runWithStubNode([sample, "page.html", "--exclude=*.pdf", "--exclude=a b*"]), [
+    "--exclude=*.pdf",
+    "--exclude=a b*",
+    "page.html",
+  ]);
+  assert.deepEqual(await runWithStubNode(["--sort", "--exclude=*", "--count", sample]), [
+    "--sort",
+    "--count",
+    "--exclude=*",
+  ]);
+});
+
+test("a bare --exclude is an unknown option: exit 2, naming it", async () => {
+  const r = await run(["--exclude", sample]);
+  assert.equal(r.code, 2, r.stderr);
+  assert.equal(r.stderr, "error: unknown option: --exclude (only --sort, --count and --exclude=GLOB are supported)\n");
+  assert.equal(r.stdout, "");
+});
+
+test("--exclude=*/map with the real node filters the links (end to end through the script)", {
+  skip: skipNoHtmlq,
+}, async () => {
+  const dir = await mkdtemp(join(tmpdir(), "links-script-"));
+  try {
+    const r = await run(["--exclude=*/map", sample], process.env, dir);
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.stdout, `${expectedLinks.filter((l) => !l.endsWith("/map")).join("\n")}\n`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
