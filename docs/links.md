@@ -204,4 +204,4 @@ Arguments typed after `npm run links:config --` are passed on behind the file's,
 
 ## Regenerating the diagram
 
-The diagram is generated from its source `docs/links.mmd`. Run `npm run diagram` from the repository root. It needs `mmdc` from npm on the PATH (`npm install -g @mermaid-js/mermaid-cli`).
+The diagram is generated from its source `docs/links.mmd`. Run `npm run diagram` from the repository root. It writes the diagram as `docs/links.svg`, `docs/links.png` and `docs/links.pdf` (the PDF page has the size of the diagram). If a render fails, none of the three files changes. It needs `mmdc` from npm on the PATH (`npm install -g @mermaid-js/mermaid-cli`).
