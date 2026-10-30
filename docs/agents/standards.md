@@ -1,4 +1,4 @@
-<!-- devloop: 0.165.0 -->
+<!-- devloop: 0.166.0 -->
 # Standards
 
 - A shell script that captures a tool's output as a value sends the tool's stderr to a file of its own, so a warning from a tool that succeeded cannot become part of the value and turn a valid answer into an error.
