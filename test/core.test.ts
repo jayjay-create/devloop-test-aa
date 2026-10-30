@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseLinks, distinct, escapeHtml, renderPage, consoleText, matchesGlob, applyExclude, parseLimit, applyLimit } from "../src/core.ts";
+import {
+  parseLinks,
+  distinct,
+  escapeHtml,
+  renderPage,
+  consoleText,
+  matchesGlob,
+  applyExclude,
+  parseLimit,
+  applyLimit,
+} from "../src/core.ts";
 
 test("distinct keeps the first occurrence in order", () => {
   assert.deepEqual(distinct(["b", "a", "b"]), ["b", "a"]);
@@ -159,7 +169,21 @@ test("parseLimit accepts a whole number of at least 1 that is a safe integer", (
 });
 
 test("parseLimit refuses everything else", () => {
-  const texts = ["", "0", "-1", "abc", "2.5", "1e3", "0x10", "007", "+3", String(Number.MAX_SAFE_INTEGER + 2), " 3", "3 ", "3\n"];
+  const texts = [
+    "",
+    "0",
+    "-1",
+    "abc",
+    "2.5",
+    "1e3",
+    "0x10",
+    "007",
+    "+3",
+    String(Number.MAX_SAFE_INTEGER + 2),
+    " 3",
+    "3 ",
+    "3\n",
+  ];
   for (const text of texts) assert.equal(parseLimit(text), undefined, JSON.stringify(text));
 });
 
