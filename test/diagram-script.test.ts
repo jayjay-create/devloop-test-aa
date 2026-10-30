@@ -190,12 +190,9 @@ test("a stub mmdc that writes a file and exits 0: exit 0 and the three outputs h
         call.output,
         new RegExp(`^${escapeRegExp(`${dir}/scripts/../docs`)}/\\.diagram\\.[^/]+/links\\.${call.format}$`),
       );
-      // Only the PDF is rendered with an option: --pdfFit, so the page has the size of the diagram.
-      assert.equal(
-        call.opts,
-        call.format === "pdf" ? "--pdfFit" : "",
-        `${call.format} was rendered with: ${call.opts}`,
-      );
+      // No option for any format. For the PDF this matters: mmdc fits the page to the diagram by default, and
+      // --pdf-paper-format (or any size option) would replace that with a fixed paper size.
+      assert.equal(call.opts, "", `${call.format} was rendered with options: ${call.opts}`);
     }
     assert.deepEqual(await leftovers(dir), []);
   });
