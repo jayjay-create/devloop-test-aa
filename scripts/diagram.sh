@@ -1,5 +1,5 @@
 #!/bin/sh
-# Renders docs/links.mmd (Mermaid) into docs/links.svg and docs/links.png with mmdc.
+# Renders docs/links.mmd (Mermaid) into docs/links.svg, docs/links.png and docs/links.pdf with mmdc.
 # Usage: npm run diagram
 
 if [ $# -ge 1 ]; then
@@ -17,6 +17,7 @@ docs="$(dirname -- "$0")/../docs"
 input="$docs/links.mmd"
 target_svg="$docs/links.svg"
 target_png="$docs/links.png"
+target_pdf="$docs/links.pdf"
 
 if [ ! -f "$input" ]; then
   echo "error: docs/links.mmd is missing" >&2
@@ -32,9 +33,13 @@ if [ -d "$target_png" ]; then
   echo "error: docs/links.png is a directory" >&2
   exit 1
 fi
+if [ -d "$target_pdf" ]; then
+  echo "error: docs/links.pdf is a directory" >&2
+  exit 1
+fi
 
-# Both renders go to a temp directory and replace the committed files only after both succeeded and wrote something,
-# so a failed render of either format leaves SVG and PNG as they were. mmdc wants the output name to end in the
+# All three renders go to a temp directory and replace the committed files only after all succeeded and wrote something,
+# so a failed render of any format leaves SVG, PNG and PDF as they were. mmdc wants the output name to end in the
 # format, and POSIX mktemp has no suffix, so the files live in a temp directory. That directory sits next to the
 # targets: the final mv is then a rename on one filesystem and cannot leave a half-copied file behind.
 tmpdir="$(mktemp -d "$docs/.diagram.XXXXXX")" || {
@@ -44,13 +49,16 @@ tmpdir="$(mktemp -d "$docs/.diagram.XXXXXX")" || {
 trap 'rm -rf "$tmpdir"' EXIT
 trap 'exit 1' HUP INT TERM
 
-# render <format>: renders the input into the temp directory as links.<format>, mmdc's default size and no other option.
+# render <format> [mmdc option...]: renders the input into the temp directory as links.<format>. Without options mmdc's
+# default size is used; the PDF gets --pdfFit, so its page has the size of the diagram.
 render() {
-  if ! mmdc -i "$input" -o "$tmpdir/links.$1" -e "$1"; then
+  format="$1"
+  shift
+  if ! mmdc -i "$input" -o "$tmpdir/links.$format" -e "$format" "$@"; then
     echo "error: mmdc failed rendering docs/links.mmd" >&2
     exit 1
   fi
-  if [ ! -s "$tmpdir/links.$1" ]; then
+  if [ ! -s "$tmpdir/links.$format" ]; then
     echo "error: mmdc wrote no output for docs/links.mmd" >&2
     exit 1
   fi
@@ -58,14 +66,20 @@ render() {
 
 render png
 render svg
+render pdf --pdfFit
 
-# Two renames are not atomic as a pair: only a failing second mv (permissions, a full disk) leaves the new SVG beside the
-# old PNG. Both renders succeeded and both targets are known not to be directories before the first mv.
+# Three renames are not atomic as a set: a failing mv after the first (permissions, a full disk) leaves a mix of new and
+# old files among docs/links.svg, docs/links.png and docs/links.pdf. All renders succeeded and no target is known to be a
+# directory before the first mv, and the message of a failing mv says which files were already replaced.
 if ! mv -f "$tmpdir/links.svg" "$target_svg"; then
   echo "error: cannot replace docs/links.svg" >&2
   exit 1
 fi
 if ! mv -f "$tmpdir/links.png" "$target_png"; then
-  echo "error: cannot replace docs/links.png (docs/links.svg was already replaced)" >&2
+  echo "error: cannot replace docs/links.png (docs/links.svg was already replaced, docs/links.pdf was not touched)" >&2
+  exit 1
+fi
+if ! mv -f "$tmpdir/links.pdf" "$target_pdf"; then
+  echo "error: cannot replace docs/links.pdf (docs/links.svg and docs/links.png were already replaced)" >&2
   exit 1
 fi
