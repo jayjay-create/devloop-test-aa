@@ -757,5 +757,7 @@ test("the temporary file is gone after a limit error and after a limit run", asy
   assert.equal(ok.code, 0, ok.stderr);
   assert.equal(failing.code, 1, failing.stderr);
   assert.equal(failingValue.code, 1, failingValue.stderr);
+  assert.equal(failingValue.npmArgs, undefined);
+  assert.ok((failingValue.tmpDuring ?? []).length > 0, "the temporary file stood while yq ran");
   assert.deepEqual([bad.tmpLeft, ok.tmpLeft, failing.tmpLeft, failingValue.tmpLeft], [[], [], [], []]);
 });
