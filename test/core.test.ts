@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseLinks, distinct, escapeHtml, renderPage, consoleText, matchesGlob, applyExclude } from "../src/core.ts";
+import {
+  parseLinks,
+  distinct,
+  escapeHtml,
+  renderPage,
+  consoleText,
+  matchesGlob,
+  applyExclude,
+  parseLimit,
+  applyLimit,
+} from "../src/core.ts";
 
 test("distinct keeps the first occurrence in order", () => {
   assert.deepEqual(distinct(["b", "a", "b"]), ["b", "a"]);
@@ -146,4 +156,45 @@ test("renderPage without a title, with an empty one or with undefined is byte-id
   assert.equal(renderPage(links, {}), renderPage(links));
   assert.equal(renderPage(links, { title: undefined }), renderPage(links));
   assert.ok(!renderPage(links, { title: "" }).includes("<h1>"));
+});
+
+test("parseLimit accepts a whole number of at least 1 that is a safe integer", () => {
+  const cases: [string, number][] = [
+    ["1", 1],
+    ["3", 3],
+    ["100", 100],
+    [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER],
+  ];
+  for (const [text, expected] of cases) assert.equal(parseLimit(text), expected, text);
+});
+
+test("parseLimit refuses everything else", () => {
+  const texts = [
+    "",
+    "0",
+    "-1",
+    "abc",
+    "2.5",
+    "1e3",
+    "0x10",
+    "007",
+    "+3",
+    "9007199254740992",
+    "9007199254740993",
+    "99999999999999999999",
+    " 3",
+    "3 ",
+    "3\n",
+  ];
+  for (const text of texts) assert.equal(parseLimit(text), undefined, JSON.stringify(text));
+});
+
+test("applyLimit: undefined and a limit above the length leave the input, otherwise the first N in order", () => {
+  const links = ["c", "a", "b"];
+  assert.deepEqual(applyLimit(links, undefined), ["c", "a", "b"]);
+  assert.deepEqual(applyLimit(links, 4), ["c", "a", "b"]);
+  assert.deepEqual(applyLimit(links, 3), ["c", "a", "b"]);
+  assert.deepEqual(applyLimit(links, 2), ["c", "a"]);
+  assert.deepEqual(applyLimit(links, 1), ["c"]);
+  assert.deepEqual(applyLimit([], 2), []);
 });

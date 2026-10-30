@@ -88,6 +88,7 @@ async function runScript(s: Setup): Promise<Outcome> {
         '[.exclude[] | select(contains("\\n"))] | length': { out: "0" },
         ".title | tag": { out: "!!null" },
         '.title | contains("\\n")': { out: "false" },
+        ".limit | tag": { out: "!!null" },
         ...s.yqBy,
       };
       let cases = "";
@@ -335,6 +336,11 @@ const titleExprs = {
   text: ".title",
 };
 
+const limitExprs = {
+  tag: ".limit | tag",
+  value: ".limit",
+};
+
 const patternExprs = {
   tag: ".exclude | tag",
   items: ".exclude[] | tag",
@@ -384,10 +390,11 @@ test("yq is asked for the type of exclude, the type of its items, newlines in th
     patternExprs.newline,
     patternExprs.list,
     titleExprs.tag,
+    limitExprs.tag,
   ]);
   assert.equal(r.yqArgs?.[0], ".sort");
   // Every call reads the config of the project root, not only the first.
-  assert.deepEqual(r.yqFiles, Array(6).fill(join(r.dir, "links.config.yaml")));
+  assert.deepEqual(r.yqFiles, Array(7).fill(join(r.dir, "links.config.yaml")));
 });
 
 test("exclude: [] (a list without items) passes nothing", async () => {
@@ -405,7 +412,7 @@ test("a missing exclude key passes nothing and asks no further than its type", a
   const r = await runScript({ config: "sort: false\n", yq: { out: "false" }, args: page });
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
-  assert.deepEqual(r.yqExprs, [".sort", patternExprs.tag, titleExprs.tag]);
+  assert.deepEqual(r.yqExprs, [".sort", patternExprs.tag, titleExprs.tag, limitExprs.tag]);
 });
 
 test("exclude that is not a list is an error naming the file and the key; npm is not called", async () => {
@@ -552,14 +559,14 @@ test("a missing title key passes nothing and asks only for its type", async () =
   const r = await runScript({ config: "sort: false\n", yq: { out: "false" }, args: page });
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page]);
-  assert.equal(r.yqExprs.at(-1), titleExprs.tag);
+  assert.deepEqual(r.yqExprs.slice(-2), [titleExprs.tag, limitExprs.tag]);
   assert.ok(!r.yqExprs.includes(titleExprs.text), String(r.yqExprs));
 });
 
 test("yq is asked for the type of title, newlines in it and then the title, each on the config of the project root", async () => {
   const r = await runScript({ ...titleOf("T"), yq: { out: "null" }, args: page });
   assert.equal(r.code, 0, r.stderr);
-  assert.deepEqual(r.yqExprs.slice(-3), [titleExprs.tag, titleExprs.newline, titleExprs.text]);
+  assert.deepEqual(r.yqExprs.slice(-4, -1), [titleExprs.tag, titleExprs.newline, titleExprs.text]);
   assert.deepEqual(r.yqFiles, Array(r.yqExprs.length).fill(join(r.dir, "links.config.yaml")));
 });
 
@@ -645,4 +652,112 @@ test('exclude with an explicit title: "" passes the --exclude and no --title', a
   assert.equal(r.code, 0, r.stderr);
   assert.deepEqual(r.npmArgs, ["run", "links", "--", "--exclude=a", ...page]);
   assert.ok(!r.npmArgs?.some((a) => a.startsWith("--title")), String(r.npmArgs));
+});
+
+// A config with a limit as the stub yq would read it: its tag and its value.
+function limitOf(tag: string, value: string, config = `limit: ${value}\n`): Pick<Setup, "config" | "yqBy"> {
+  return { config, yqBy: { [limitExprs.tag]: { out: tag }, [limitExprs.value]: { out: value } } };
+}
+
+test("limit: 3 puts exactly --limit=3 among the npm arguments, in front of the user's", async () => {
+  const r = await runScript({ ...limitOf("!!int", "3"), yq: { out: "null" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--limit=3", ...page]);
+});
+
+test("a limit with sort, exclude and title is passed after them and before the arguments", async () => {
+  const r = await runScript({
+    ...excludeOf("a"),
+    yqBy: { ...excludeOf("a").yqBy, ...titleOf("T").yqBy, ...limitOf("!!int", "7").yqBy },
+    yq: { out: "true" },
+    args: page,
+  });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--sort", "--exclude=a", "--title=T", "--limit=7", ...page]);
+});
+
+test("an absent or null limit passes no --limit and asks no further than its type", async () => {
+  for (const config of ["sort: false\n", "limit: null\n", "limit:\n"]) {
+    const r = await runScript({ config, yq: { out: "false" }, args: page });
+    assert.equal(r.code, 0, `${config}: ${r.stderr}`);
+    assert.deepEqual(r.npmArgs, ["run", "links", "--", ...page], config);
+    assert.ok(!r.yqExprs.includes(limitExprs.value), String(r.yqExprs));
+  }
+});
+
+test("an integer the script cannot judge is passed on unchanged for the program to refuse", async () => {
+  for (const value of ["0", "-1", "0x10"]) {
+    const r = await runScript({ ...limitOf("!!int", value), yq: { out: "null" }, args: page });
+    assert.equal(r.code, 0, `${value}: ${r.stderr}`);
+    assert.deepEqual(r.npmArgs, ["run", "links", "--", `--limit=${value}`, ...page], value);
+  }
+});
+
+test("a config with only limit still passes it", async () => {
+  const r = await runScript({ ...limitOf("!!int", "1"), yq: { out: "null" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.npmArgs, ["run", "links", "--", "--limit=1", ...page]);
+});
+
+test("yq is asked for the type of limit and then the limit, each on the config of the project root", async () => {
+  const r = await runScript({ ...limitOf("!!int", "3"), yq: { out: "null" }, args: page });
+  assert.equal(r.code, 0, r.stderr);
+  assert.deepEqual(r.yqExprs.slice(-2), [limitExprs.tag, limitExprs.value]);
+  assert.deepEqual(r.yqFiles, Array(r.yqExprs.length).fill(join(r.dir, "links.config.yaml")));
+});
+
+test("limit that is not a plain number is an error naming the file and the key; npm is not called", async () => {
+  for (const tag of ["!!str", "!!float", "!!seq", "!!map", "!!bool"]) {
+    const r = await runScript({ ...limitOf(tag, "3", "limit: x\n"), yq: { out: "null" }, args: page });
+    assert.equal(r.code, 1, `${tag}: ${r.stderr}`);
+    assert.equal(r.stderr, "error: links.config.yaml: limit must be a whole number of at least 1\n", tag);
+    assert.equal(r.stdout, "", tag);
+    assert.equal(r.npmArgs, undefined, tag);
+  }
+});
+
+test("a failing yq on limit is an error with its message even when it printed a valid answer; npm is not called", async () => {
+  const r = await runScript({
+    config: "limit: [\n",
+    yq: { out: "null", err: "bad\u001b[2J file" },
+    yqBy: { [limitExprs.tag]: { out: "!!int", code: 1 } },
+    args: page,
+  });
+  assert.equal(r.code, 1, r.stderr);
+  assert.ok(!r.stderr.includes("\u001b"), JSON.stringify(r.stderr));
+  assert.ok(r.stderr.includes("(exit 1): bad[2J file"), JSON.stringify(r.stderr));
+  assert.equal(r.npmArgs, undefined);
+  const value = await runScript({
+    config: "limit: 3\n",
+    yq: { out: "null", err: "boom" },
+    yqBy: { [limitExprs.tag]: { out: "!!int" }, [limitExprs.value]: { out: "3", code: 1 } },
+    args: page,
+  });
+  assert.equal(value.code, 1, value.stderr);
+  assert.ok(value.stderr.includes("(exit 1): boom"), value.stderr);
+  assert.equal(value.npmArgs, undefined);
+});
+
+test("the temporary file is gone after a limit error and after a limit run", async () => {
+  const bad = await runScript({ ...limitOf("!!str", "3", "limit: '3'\n"), yq: { out: "null" }, args: page });
+  const ok = await runScript({ ...limitOf("!!int", "3"), yq: { out: "null" }, args: page });
+  const failing = await runScript({
+    config: "limit: [\n",
+    yq: { out: "null", err: "x" },
+    yqBy: { [limitExprs.tag]: { out: "", code: 1 } },
+    args: page,
+  });
+  const failingValue = await runScript({
+    config: "limit: 3\n",
+    yq: { out: "null", err: "x" },
+    yqBy: { [limitExprs.tag]: { out: "!!int" }, [limitExprs.value]: { out: "3", code: 1 } },
+    args: page,
+  });
+  assert.equal(bad.code, 1, bad.stderr);
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.equal(failing.code, 1, failing.stderr);
+  assert.equal(failingValue.code, 1, failingValue.stderr);
+  assert.equal(failingValue.npmArgs, undefined);
+  assert.ok((failingValue.tmpDuring ?? []).length > 0, "the temporary file stood while yq ran");
+  assert.deepEqual([bad.tmpLeft, ok.tmpLeft, failing.tmpLeft, failingValue.tmpLeft], [[], [], [], []]);
 });

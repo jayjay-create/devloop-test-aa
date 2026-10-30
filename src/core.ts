@@ -60,3 +60,15 @@ export function matchesGlob(pattern: string, href: string): boolean {
 export function applyExclude(links: string[], patterns: string[]): string[] {
   return links.filter((link) => !patterns.some((p) => matchesGlob(p, link)));
 }
+
+// A limit is a whole number of at least 1 written in plain digits (no sign, no leading zero, no exponent,
+// no hex) that is also a safe integer; anything else is undefined.
+export function parseLimit(text: string): number | undefined {
+  if (!/^[1-9][0-9]*$/.test(text)) return undefined;
+  const n = Number(text);
+  return Number.isSafeInteger(n) ? n : undefined;
+}
+
+export function applyLimit(links: string[], limit: number | undefined): string[] {
+  return limit === undefined ? links : links.slice(0, limit);
+}
