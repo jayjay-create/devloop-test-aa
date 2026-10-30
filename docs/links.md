@@ -138,6 +138,8 @@ Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops 
 | 1 | `error: htmlq failed on: <name>` | `scripts/links.sh`: htmlq exited with an error on the file. |
 | 1 | `error: cannot read stdin: <os message>` | `src/main.ts`: reading stdin failed. |
 | 1 | `error: cannot write <target>: <os message>` | `src/main.ts`: the output page could not be written. |
+| 1 | `error: invalid --limit: <value> (must be a whole number of at least 1)` | `src/main.ts`: the value of `--limit=` is not a whole number of at least 1; nothing is read or written. |
+| 1 | `error: links.config.yaml: limit must be a whole number of at least 1` | `scripts/links-config.sh`: `limit` in `links.config.yaml` is not a number (a quoted number, a decimal, text, a list or a bool). |
 | 2 | `error: unknown option: <arg> (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)` | `src/main.ts`: an argument starting with `--` other than the supported options. |
 | 2 | `error: unknown option: <arg> (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)` | `scripts/links.sh`: an argument starting with `--` other than the supported options, checked before htmlq is looked for. |
 | 2 | `usage: npm run links -- [--sort] [--count] [--exclude=GLOB] [--title=TEXT] [--limit=N] <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
