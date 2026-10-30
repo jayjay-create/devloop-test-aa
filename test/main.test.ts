@@ -433,6 +433,13 @@ test("--limit=2 prints and writes the first two links after exclude and sort", a
   assert.deepEqual(pageHrefsOf(f.written["links.html"]), ["a", "b"]);
 });
 
+test("--limit counts distinct links: a repeat before the cut does not use up a place", async () => {
+  const f = fakes("a\na\nb\nc\n");
+  assert.equal(await f.run(["--limit=2"]), 0);
+  assert.equal(f.out, "a\nb\n");
+  assert.deepEqual(pageHrefsOf(f.written["links.html"]), ["a", "b"]);
+});
+
 test("--limit without --sort keeps the first N in input order", async () => {
   const f = fakes("z\nb\nz\na\n");
   assert.equal(await f.run(["--limit=2"]), 0);
@@ -467,7 +474,7 @@ test("a repeated --limit= follows the last one", async () => {
 });
 
 test("an invalid --limit returns 1 with one stderr line, writes nothing and reads no stdin", async () => {
-  for (const value of ["", "0", "-1", "abc", "2.5", "1e3", "0x10", "007", "+3"]) {
+  for (const value of ["", "0", "-1", "abc", "2.5", "1e3", "0x10", "007", "+3", "9007199254740992"]) {
     let read = false;
     const input: AsyncIterable<Buffer> = {
       [Symbol.asyncIterator]: () => {

@@ -685,6 +685,14 @@ test("an absent or null limit passes no --limit and asks no further than its typ
   }
 });
 
+test("an integer the script cannot judge is passed on unchanged for the program to refuse", async () => {
+  for (const value of ["0", "-1", "0x10"]) {
+    const r = await runScript({ ...limitOf("!!int", value), yq: { out: "null" }, args: page });
+    assert.equal(r.code, 0, `${value}: ${r.stderr}`);
+    assert.deepEqual(r.npmArgs, ["run", "links", "--", `--limit=${value}`, ...page], value);
+  }
+});
+
 test("a config with only limit still passes it", async () => {
   const r = await runScript({ ...limitOf("!!int", "1"), yq: { out: "null" }, args: page });
   assert.equal(r.code, 0, r.stderr);
@@ -739,8 +747,15 @@ test("the temporary file is gone after a limit error and after a limit run", asy
     yqBy: { [limitExprs.tag]: { out: "", code: 1 } },
     args: page,
   });
+  const failingValue = await runScript({
+    config: "limit: 3\n",
+    yq: { out: "null", err: "x" },
+    yqBy: { [limitExprs.tag]: { out: "!!int" }, [limitExprs.value]: { out: "3", code: 1 } },
+    args: page,
+  });
   assert.equal(bad.code, 1, bad.stderr);
   assert.equal(ok.code, 0, ok.stderr);
   assert.equal(failing.code, 1, failing.stderr);
-  assert.deepEqual([bad.tmpLeft, ok.tmpLeft, failing.tmpLeft], [[], [], []]);
+  assert.equal(failingValue.code, 1, failingValue.stderr);
+  assert.deepEqual([bad.tmpLeft, ok.tmpLeft, failing.tmpLeft, failingValue.tmpLeft], [[], [], [], []]);
 });
