@@ -138,9 +138,9 @@ Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops 
 | 1 | `error: htmlq failed on: <name>` | `scripts/links.sh`: htmlq exited with an error on the file. |
 | 1 | `error: cannot read stdin: <os message>` | `src/main.ts`: reading stdin failed. |
 | 1 | `error: cannot write <target>: <os message>` | `src/main.ts`: the output page could not be written. |
-| 2 | `error: unknown option: <arg> (only --sort and --count are supported)` | `src/main.ts`: an argument starting with `--` other than `--sort` or `--count`. |
-| 2 | `error: unknown option: <arg> (only --sort and --count are supported)` | `scripts/links.sh`: an argument starting with `--` other than `--sort` or `--count`, checked before htmlq is looked for. |
-| 2 | `usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
+| 2 | `error: unknown option: <arg> (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)` | `src/main.ts`: an argument starting with `--` other than the supported options. |
+| 2 | `error: unknown option: <arg> (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)` | `scripts/links.sh`: an argument starting with `--` other than the supported options, checked before htmlq is looked for. |
+| 2 | `usage: npm run links -- [--sort] [--count] [--exclude=GLOB] [--title=TEXT] [--limit=N] <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
 
 Examples:
 
@@ -158,11 +158,11 @@ error: htmlq failed on: test/sample.html
 # exit 1
 
 $ sh scripts/links.sh
-usage: npm run links -- [--sort] [--count] <html-file> [<output-page>]
+usage: npm run links -- [--sort] [--count] [--exclude=GLOB] [--title=TEXT] [--limit=N] <html-file> [<output-page>]
 # exit 2
 
 $ node src/bin.ts --foo < /dev/null
-error: unknown option: --foo (only --sort and --count are supported)
+error: unknown option: --foo (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)
 # exit 2
 
 $ node src/bin.ts /nonexistent-dir/x.html < /dev/null
@@ -180,6 +180,25 @@ error: cannot write /nonexistent-dir/x.html: ENOENT: no such file or directory, 
 - `yq` missing while the file exists: a message with the hint `brew install yq`, exit 1.
 - `yq` fails (for example broken YAML): its message on stderr, exit 1, no unsorted run.
 - Errors of `npm run links` itself come through unchanged.
+
+## Limiting the number of links
+
+`links.config.yaml` may hold the optional key `limit`, a whole number of at least 1 (example: `limit: 2`). `npm run links:config` then prints and writes at most that many links: the first N after `exclude` and `sort`. `--count` prints the number after the limit. Without `limit`, or with a limit above the number of links, nothing changes.
+
+- `limit` missing or `null`: no limit.
+- `limit: "2"` (quoted), `2.5`, text, a list or a bool: `error: links.config.yaml: limit must be a whole number of at least 1` on stderr, exit 1, nothing written.
+- `limit: 0`, a negative number or `0x10`: `error: invalid --limit: <value> (must be a whole number of at least 1)`, exit 1, nothing written.
+
+`npm run links` and `node src/bin.ts` take the same as `--limit=N` (`=` form only, anywhere among the arguments; a repeated `--limit=` follows the last one). An invalid `--limit=` is an error with exit 1, nothing is written, and stdin is not read. The unknown-option message lists it: `(only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)`.
+
+```
+$ printf 'limit: 2\nsort: true\n' > links.config.yaml
+$ npm run links:config -- test/sample.html out.html
+/relative/page
+https://example.org/a
+```
+
+Arguments typed after `npm run links:config --` are passed on behind the file's, so a typed `--limit=5` overrides the file's `limit`.
 
 ## Regenerating the diagram
 
