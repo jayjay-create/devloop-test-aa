@@ -516,9 +516,14 @@ test("a limit that looks like a file name is never taken for the HTML file or th
 test("--limit=2 with the real node limits the links (end to end through the script)", {
   skip: skipNoHtmlq,
 }, async () => {
-  const r = await run(["--limit=2", sample]);
-  assert.equal(r.code, 0, r.stderr);
-  assert.equal(r.stdout, `${expectedLinks.slice(0, 2).join("\n")}\n`);
+  const dir = await mkdtemp(join(tmpdir(), "links-script-"));
+  try {
+    const r = await run(["--limit=2", sample], process.env, dir);
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(r.stdout, `${expectedLinks.slice(0, 2).join("\n")}\n`);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("a bare --limit is an unknown option: exit 2, naming it, the text lists --limit=N", async () => {
