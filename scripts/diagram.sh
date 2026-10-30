@@ -70,7 +70,8 @@ render pdf
 
 # Three renames are not atomic as a set: a failing mv after the first (permissions, a full disk) leaves a mix of new and
 # old files among docs/links.svg, docs/links.png and docs/links.pdf. All renders succeeded and no target is known to be a
-# directory before the first mv, and the message of a failing mv says which files were already replaced.
+# directory before the first mv. A failing first mv has replaced nothing; the messages of the second and third say which
+# files were already replaced.
 if ! mv -f "$tmpdir/links.svg" "$target_svg"; then
   echo "error: cannot replace docs/links.svg" >&2
   exit 1
