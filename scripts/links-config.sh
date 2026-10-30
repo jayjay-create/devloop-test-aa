@@ -1,7 +1,8 @@
 #!/bin/sh
 # Runs npm run links with the settings of links.config.yaml in the project root: --sort when it says
 # `sort: true`, and one --exclude=<pattern> for every pattern of its `exclude` list (globs: * is any text),
-# and --title=<text> when `title` is a non-empty text.
+# and --title=<text> when `title` is a non-empty text, and --limit=<number> when `limit` is a whole number
+# (a plain YAML integer; 0 or less is refused by the program, not here).
 # Usage: npm run links:config -- <html-file> [<output-page>]
 # Needs yq (Mike Farah's) when the config file exists: brew install yq
 
@@ -24,6 +25,7 @@ value="null"
 patterns=""
 count=0
 title=""
+limit=""
 
 if [ -f "$config" ]; then
   if ! command -v yq >/dev/null 2>&1; then
@@ -117,9 +119,24 @@ EOF
       ;;
   esac
 
-  # The --exclude and --title arguments go in front of the user's arguments: appended behind them, then
+  # limit is nothing or a YAML integer; a quoted "3", a float, text, a list or a bool is an error. An integer
+  # of 0 or less, or one written as 0x10, passes here and is refused by the program (npm run links).
+  cfg_get '.limit | tag'
+  case "$cfg_out" in
+    '!!null') ;;
+    '!!int')
+      cfg_get '.limit'
+      limit="$cfg_out"
+      ;;
+    *)
+      echo "error: links.config.yaml: limit must be a whole number of at least 1" >&2
+      exit 1
+      ;;
+  esac
+
+  # The --exclude, --title and --limit arguments go in front of the user's arguments: appended behind them, then
   # the user's arguments are moved behind the new ones.
-  if [ "$count" -gt 0 ] || [ -n "$title" ]; then
+  if [ "$count" -gt 0 ] || [ -n "$title" ] || [ -n "$limit" ]; then
     n=$#
     i=0
     # Exactly $count patterns: a read that finds no line left is a trailing empty pattern.
@@ -132,6 +149,7 @@ $patterns
 EOF
     # An empty title passes nothing, as a missing key does.
     if [ -n "$title" ]; then set -- "$@" "--title=$title"; fi
+    if [ -n "$limit" ]; then set -- "$@" "--limit=$limit"; fi
     while [ "$n" -gt 0 ]; do
       a="$1"
       shift
