@@ -198,6 +198,21 @@ test("a stub mmdc that writes a file and exits 0: exit 0 and the three outputs h
   });
 });
 
+test("a first run with no docs/links.svg, docs/links.png and docs/links.pdf: exit 0 and all three are created", async () => {
+  await withSandbox(async (dir, stubs, svg) => {
+    await stubMmdc(stubs, writeStub);
+    await rm(svg);
+    await rm(pngOf(dir));
+    await rm(pdfOf(dir));
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(await readFile(svg, "utf8"), "stub svg");
+    assert.equal(await readFile(pngOf(dir), "utf8"), "stub png");
+    assert.equal(await readFile(pdfOf(dir), "utf8"), "stub pdf");
+    assert.deepEqual(await leftovers(dir), []);
+  });
+});
+
 test("a stub mmdc that exits non-zero after writing: exit 1 and the three outputs are unchanged", async () => {
   await withSandbox(async (dir, stubs, svg) => {
     await writeFile(svg, Buffer.from([0x3c, 0x73, 0x76, 0x67, 0x3e, 0x00, 0xff, 0x0a]));
