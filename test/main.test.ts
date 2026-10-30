@@ -168,7 +168,7 @@ test("an unknown option returns 2 with one stderr line and writes nothing", asyn
   assert.equal(await f.run(["--foo"]), 2);
   assert.equal(
     f.err,
-    "error: unknown option: --foo (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n",
+    "error: unknown option: --foo (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)\n",
   );
   assert.equal(f.out, "");
   assert.deepEqual(Object.keys(f.written), []);
@@ -188,7 +188,7 @@ test("control characters in an unknown option do not reach stderr", async () => 
   assert.equal(await f.run([`--x\n\u001b[31m`]), 2);
   assert.equal(
     f.err,
-    "error: unknown option: --x [31m (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n",
+    "error: unknown option: --x [31m (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)\n",
   );
   assert.equal(f.err.trimEnd().split("\n").length, 1);
   assert.ok(!/[\p{Cc}\p{Zl}\p{Zp}]/u.test(f.err.trimEnd()));
@@ -320,7 +320,7 @@ test("a bare --exclude exits 2 as an unknown option and writes nothing", async (
   assert.equal(await f.run(["--exclude"]), 2);
   assert.equal(
     f.err,
-    "error: unknown option: --exclude (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n",
+    "error: unknown option: --exclude (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)\n",
   );
   assert.equal(f.out, "");
   assert.deepEqual(Object.keys(f.written), []);
@@ -408,7 +408,7 @@ test("a bare --title exits 2 as an unknown option and writes nothing", async () 
   assert.equal(await f.run(["--title"]), 2);
   assert.equal(
     f.err,
-    "error: unknown option: --title (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n",
+    "error: unknown option: --title (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)\n",
   );
   assert.equal(f.out, "");
   assert.deepEqual(Object.keys(f.written), []);
@@ -420,4 +420,83 @@ test("--title and --exclude together both take effect", async () => {
   assert.equal(f.out, "b\n");
   const page = f.written["links.html"];
   assert.ok(page.includes("<h1>T</h1>") && !page.includes("a.pdf"), page);
+});
+
+function pageHrefsOf(html: string): string[] {
+  return [...html.matchAll(/<li><a href="[^"]*">([^<]*)<\/a><\/li>/g)].map((m) => m[1]);
+}
+
+test("--limit=2 prints and writes the first two links after exclude and sort", async () => {
+  const f = fakes("z\nb.pdf\nc\na\nb\nc\n");
+  assert.equal(await f.run(["--sort", "--exclude=*.pdf", "--limit=2"]), 0);
+  assert.equal(f.out, "a\nb\n");
+  assert.deepEqual(pageHrefsOf(f.written["links.html"]), ["a", "b"]);
+});
+
+test("--limit without --sort keeps the first N in input order", async () => {
+  const f = fakes("z\nb\nz\na\n");
+  assert.equal(await f.run(["--limit=2"]), 0);
+  assert.equal(f.out, "z\nb\n");
+});
+
+test("--count prints the limited number", async () => {
+  const f = fakes("a\nb\nc\n");
+  assert.equal(await f.run(["--count", "--limit=2"]), 0);
+  assert.equal(f.out, "2\n");
+  assert.deepEqual(pageHrefsOf(f.written["links.html"]), ["a", "b"]);
+});
+
+test("a limit above the number of links changes nothing", async () => {
+  const plain = fakes("a\nb\n");
+  assert.equal(await plain.run([]), 0);
+  const f = fakes("a\nb\n");
+  assert.equal(await f.run(["--limit=5"]), 0);
+  assert.equal(f.out, plain.out);
+  assert.equal(f.written["links.html"], plain.written["links.html"]);
+});
+
+test("a repeated --limit= follows the last one", async () => {
+  const f = fakes("a\nb\nc\n");
+  assert.equal(await f.run(["--limit=1", "--limit=2"]), 0);
+  assert.equal(f.out, "a\nb\n");
+  const g = fakes("a\nb\nc\n");
+  assert.equal(await g.run(["--limit=2", "--limit=1"]), 0);
+  assert.equal(g.out, "a\n");
+  const h = fakes("a\nb\nc\n");
+  assert.equal(await h.run(["--limit=2", "--limit=x"]), 1);
+});
+
+test("an invalid --limit returns 1 with one stderr line, writes nothing and reads no stdin", async () => {
+  for (const value of ["", "0", "-1", "abc", "2.5", "1e3", "0x10", "007", "+3"]) {
+    let read = false;
+    const input: AsyncIterable<Buffer> = {
+      [Symbol.asyncIterator]: () => {
+        read = true;
+        return { next: () => Promise.resolve({ done: true, value: undefined }) };
+      },
+    };
+    const f = fakes(input);
+    assert.equal(await f.run([`--limit=${value}`]), 1, value);
+    assert.equal(f.err, `error: invalid --limit: ${value} (must be a whole number of at least 1)\n`, value);
+    assert.equal(f.out, "", value);
+    assert.deepEqual(Object.keys(f.written), [], value);
+    assert.equal(read, false, value);
+  }
+});
+
+test("control characters in an invalid --limit do not reach stderr", async () => {
+  const f = fakes("a\n");
+  assert.equal(await f.run(["--limit=x\n\u001b[31m"]), 1);
+  assert.equal(f.err, "error: invalid --limit: x [31m (must be a whole number of at least 1)\n");
+  assert.deepEqual(Object.keys(f.written), []);
+});
+
+test("a bare --limit exits 2 as an unknown option and the text lists --limit=N", async () => {
+  const f = fakes("a\n");
+  assert.equal(await f.run(["--limit"]), 2);
+  assert.equal(
+    f.err,
+    "error: unknown option: --limit (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)\n",
+  );
+  assert.deepEqual(Object.keys(f.written), []);
 });

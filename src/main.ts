@@ -1,4 +1,4 @@
-import { parseLinks, distinct, applyExclude, renderPage, consoleText } from "./core.ts";
+import { parseLinks, distinct, applyExclude, applyLimit, parseLimit, renderPage, consoleText } from "./core.ts";
 
 type Writable = { write(s: string): unknown };
 
@@ -27,18 +27,29 @@ export async function main(
   let count = false;
   const excludes: string[] = [];
   let title = "";
+  let limitText: string | undefined;
   const positionals: string[] = [];
   for (const arg of argv) {
     if (arg === "--sort") sort = true;
     else if (arg === "--count") count = true;
     else if (arg.startsWith("--exclude=")) excludes.push(arg.slice("--exclude=".length));
     else if (arg.startsWith("--title=")) title = arg.slice("--title=".length);
+    else if (arg.startsWith("--limit=")) limitText = arg.slice("--limit=".length);
     else if (arg.startsWith("--")) {
       stderr.write(
-        `error: unknown option: ${sanitizeForStderr(arg)} (only --sort, --count, --exclude=GLOB and --title=TEXT are supported)\n`,
+        `error: unknown option: ${sanitizeForStderr(arg)} (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)\n`,
       );
       return 2;
     } else positionals.push(arg);
+  }
+  // A bad limit is refused before stdin is read, so nothing is consumed or written for it.
+  let limit: number | undefined;
+  if (limitText !== undefined) {
+    limit = parseLimit(limitText);
+    if (limit === undefined) {
+      stderr.write(`error: invalid --limit: ${sanitizeForStderr(limitText)} (must be a whole number of at least 1)\n`);
+      return 1;
+    }
   }
   let input: string;
   try {
@@ -49,7 +60,7 @@ export async function main(
   }
   const distinctLinks = applyExclude(distinct(parseLinks(input)), excludes);
   // The default sort compares UTF-16 code units: uppercase before lowercase, the same on every machine (not localeCompare).
-  const links = sort ? [...distinctLinks].sort() : distinctLinks;
+  const links = applyLimit(sort ? [...distinctLinks].sort() : distinctLinks, limit);
   if (count) stdout.write(`${String(links.length)}\n`);
   else {
     const text = consoleText(links);
