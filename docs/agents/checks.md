@@ -3,7 +3,7 @@ runner: make
 all: check
 ---
 
-<!-- devloop: 0.165.0 -->
+<!-- devloop: 0.166.0 -->
 # Checks
 
 | Class | Per-file | Whole | Files | Duration | Blocking | Status |
