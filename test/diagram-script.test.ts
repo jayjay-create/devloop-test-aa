@@ -12,6 +12,8 @@ const TIMEOUT_MS = 20000;
 const KILL_WAIT_MS = 2000; // after the kill; a process that still holds its pipes then is left to the OS
 const SYSTEM_PATH = "/usr/bin:/bin";
 
+const PDF_FIXTURE = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x00, 0xff, 0x0a]);
+
 type Result = { code: number | null; stdout: string; stderr: string };
 
 // Runs the script as a process with `sh` by absolute path, so a PATH without sh still works.
@@ -58,6 +60,7 @@ async function withSandbox(body: (dir: string, stubs: string, svg: string) => Pr
     await mkdir(join(dir, "scripts"));
     await cp(script, join(dir, "scripts", "diagram.sh"));
     await cp(docs, join(dir, "docs"), { recursive: true });
+    await writeFile(pdfOf(dir), PDF_FIXTURE);
     const stubs = join(dir, "stubs");
     await mkdir(stubs);
     await body(dir, stubs, join(dir, "docs", "links.svg"));
@@ -107,6 +110,28 @@ function pngOf(dir: string): string {
   return join(dir, "docs", "links.png");
 }
 
+function pdfOf(dir: string): string {
+  return join(dir, "docs", "links.pdf");
+}
+
+type Docs = { svg: Buffer; png: Buffer; pdf: Buffer };
+
+// The three outputs as they are now.
+async function snapshot(dir: string): Promise<Docs> {
+  return {
+    svg: await readFile(join(dir, "docs", "links.svg")),
+    png: await readFile(pngOf(dir)),
+    pdf: await readFile(pdfOf(dir)),
+  };
+}
+
+async function assertUnchanged(dir: string, before: Docs): Promise<void> {
+  const now = await snapshot(dir);
+  assert.ok(before.svg.equals(now.svg), "docs/links.svg changed");
+  assert.ok(before.png.equals(now.png), "docs/links.png changed");
+  assert.ok(before.pdf.equals(now.pdf), "docs/links.pdf changed");
+}
+
 function envWith(stubs: string, log: string, path = `${stubs}:${SYSTEM_PATH}`): NodeJS.ProcessEnv {
   return { ...process.env, PATH: path, STUB_LOG: log };
 }
@@ -121,36 +146,32 @@ async function leftovers(dir: string): Promise<string[]> {
 }
 
 test("a PATH without mmdc: exit 1 and stderr begins with the install message", async () => {
-  await withSandbox(async (dir, stubs, svg) => {
-    const before = await readFile(svg);
-    const pngBefore = await readFile(pngOf(dir));
+  await withSandbox(async (dir, stubs) => {
+    const before = await snapshot(dir);
     const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log"), stubs));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: mmdc is not installed/);
     assert.equal(r.stdout, "");
-    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    await assertUnchanged(dir, before);
   });
 });
 
 test("any argument: exit 2, the usage line, mmdc is not run", async () => {
-  await withSandbox(async (dir, stubs, svg) => {
+  await withSandbox(async (dir, stubs) => {
     await stubMmdc(stubs, writeStub);
-    const before = await readFile(svg);
-    const pngBefore = await readFile(pngOf(dir));
+    const before = await snapshot(dir);
     for (const args of [["extra"], ["a", "b"], [""]]) {
       const r = await run(join(dir, "scripts", "diagram.sh"), args, envWith(stubs, join(dir, "log")));
       assert.equal(r.code, 2, r.stderr);
       assert.match(r.stderr, /^usage: npm run diagram$/m);
       assert.equal(r.stdout, "");
     }
-    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    await assertUnchanged(dir, before);
     await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
   });
 });
 
-test("a stub mmdc that writes a file and exits 0: exit 0 and docs/links.svg and docs/links.png hold its output", async () => {
+test("a stub mmdc that writes a file and exits 0: exit 0 and the three outputs hold its output, rendered by three calls", async () => {
   await withSandbox(async (dir, stubs, svg) => {
     await stubMmdc(stubs, writeStub);
     const log = join(dir, "log");
@@ -158,27 +179,45 @@ test("a stub mmdc that writes a file and exits 0: exit 0 and docs/links.svg and 
     assert.equal(r.code, 0, r.stderr);
     assert.equal(await readFile(svg, "utf8"), "stub svg");
     assert.equal(await readFile(pngOf(dir), "utf8"), "stub png");
+    assert.equal(await readFile(pdfOf(dir), "utf8"), "stub pdf");
     assert.equal(r.stdout, "");
     const calls = await stubCalls(log);
-    assert.deepEqual(calls.map((c) => c.format).sort(), ["png", "svg"]);
+    assert.equal(calls.length, 3, JSON.stringify(calls));
+    assert.deepEqual(calls.map((c) => c.format).sort(), ["pdf", "png", "svg"]);
     for (const call of calls) {
       assert.equal(call.input, `${dir}/scripts/../docs/links.mmd`);
       assert.match(
         call.output,
         new RegExp(`^${escapeRegExp(`${dir}/scripts/../docs`)}/\\.diagram\\.[^/]+/links\\.${call.format}$`),
       );
+      // No option for any format. For the PDF this matters: mmdc fits the page to the diagram by default, and
+      // --pdf-paper-format (or any size option) would replace that with a fixed paper size.
       assert.equal(call.opts, "", `${call.format} was rendered with options: ${call.opts}`);
     }
     assert.deepEqual(await leftovers(dir), []);
   });
 });
 
-test("a stub mmdc that exits non-zero after writing: exit 1 and docs/links.svg and docs/links.png are unchanged", async () => {
+test("a first run with no docs/links.svg, docs/links.png and docs/links.pdf: exit 0 and all three are created", async () => {
   await withSandbox(async (dir, stubs, svg) => {
-    const before = Buffer.from([0x3c, 0x73, 0x76, 0x67, 0x3e, 0x00, 0xff, 0x0a]);
-    await writeFile(svg, before);
-    const pngBefore = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
-    await writeFile(pngOf(dir), pngBefore);
+    await stubMmdc(stubs, writeStub);
+    await rm(svg);
+    await rm(pngOf(dir));
+    await rm(pdfOf(dir));
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+    assert.equal(r.code, 0, r.stderr);
+    assert.equal(await readFile(svg, "utf8"), "stub svg");
+    assert.equal(await readFile(pngOf(dir), "utf8"), "stub png");
+    assert.equal(await readFile(pdfOf(dir), "utf8"), "stub pdf");
+    assert.deepEqual(await leftovers(dir), []);
+  });
+});
+
+test("a stub mmdc that exits non-zero after writing: exit 1 and the three outputs are unchanged", async () => {
+  await withSandbox(async (dir, stubs, svg) => {
+    await writeFile(svg, Buffer.from([0x3c, 0x73, 0x76, 0x67, 0x3e, 0x00, 0xff, 0x0a]));
+    await writeFile(pngOf(dir), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]));
+    const before = await snapshot(dir);
     await stubMmdc(stubs, `${writeStub}\nexit 3`);
     const log = join(dir, "log");
     const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, log));
@@ -189,85 +228,78 @@ test("a stub mmdc that exits non-zero after writing: exit 1 and docs/links.svg a
       call.output,
       new RegExp(`^${escapeRegExp(`${dir}/scripts/../docs`)}/\\.diagram\\.[^/]+/links\\.${call.format}$`),
     );
-    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    await assertUnchanged(dir, before);
     assert.deepEqual(await leftovers(dir), []);
   });
 });
 
-for (const failing of ["png", "svg"]) {
-  test(`a stub mmdc that fails only for ${failing}: exit 1 and both docs/links.svg and docs/links.png are unchanged`, async () => {
-    await withSandbox(async (dir, stubs, svg) => {
-      const svgBefore = await readFile(svg);
-      const pngBefore = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
-      await writeFile(pngOf(dir), pngBefore);
+for (const failing of ["png", "svg", "pdf"]) {
+  test(`a stub mmdc that fails only for ${failing}: exit 1 and docs/links.svg, docs/links.png and docs/links.pdf are byte-identical`, async () => {
+    await withSandbox(async (dir, stubs) => {
+      await writeFile(pngOf(dir), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]));
+      const before = await snapshot(dir);
       await stubMmdc(stubs, `${writeStub}\n[ "$fmt" = "${failing}" ] && exit 3\nexit 0`);
       const log = join(dir, "log");
       const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, log));
       assert.equal(r.code, 1, r.stderr);
       assert.match(r.stderr, /^error: mmdc failed rendering docs\/links\.mmd$/m);
-      // The failed render is the last mmdc call: a failed png (rendered first) does not let the svg render go on. For a failed
-      // svg, which is rendered last, the unchanged-files assertions below are what show that nothing was moved.
+      // The failed render is the last mmdc call: a failed render does not let the next one go on. What is rendered
+      // after the failing format is not called; the unchanged-files assertion shows that nothing was moved.
       assert.equal((await stubCalls(log)).at(-1)?.format, failing);
-      assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
-      assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+      await assertUnchanged(dir, before);
       assert.deepEqual(await leftovers(dir), []);
     });
   });
 
-  test(`a stub mmdc that fails only for ${failing}, with no docs/links.png yet: no docs/links.png appears`, async () => {
+  test(`a stub mmdc that fails only for ${failing}, with no docs/links.png and no docs/links.pdf yet: neither appears`, async () => {
     await withSandbox(async (dir, stubs, svg) => {
       const svgBefore = await readFile(svg);
       await rm(pngOf(dir), { force: true });
+      await rm(pdfOf(dir), { force: true });
       await stubMmdc(stubs, `${writeStub}\n[ "$fmt" = "${failing}" ] && exit 3\nexit 0`);
       const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
       assert.equal(r.code, 1, r.stderr);
       assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
       await assert.rejects(readFile(pngOf(dir)), { code: "ENOENT" });
+      await assert.rejects(readFile(pdfOf(dir)), { code: "ENOENT" });
       assert.deepEqual(await leftovers(dir), []);
     });
   });
 
-  test(`a stub mmdc that writes an empty ${failing} file: exit 1 and both targets are unchanged`, async () => {
-    await withSandbox(async (dir, stubs, svg) => {
-      const svgBefore = await readFile(svg);
-      const pngBefore = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]);
-      await writeFile(pngOf(dir), pngBefore);
+  test(`a stub mmdc that writes an empty ${failing} file: exit 1 with an error and the three outputs are byte-identical`, async () => {
+    await withSandbox(async (dir, stubs) => {
+      await writeFile(pngOf(dir), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff]));
+      const before = await snapshot(dir);
       await stubMmdc(stubs, `${writeStub}\n[ "$fmt" = "${failing}" ] && : > "$out"\nexit 0`);
       const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
       assert.equal(r.code, 1, r.stderr);
       assert.match(r.stderr, /^error: mmdc wrote no output for docs\/links\.mmd$/m);
-      assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
-      assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+      await assertUnchanged(dir, before);
       assert.deepEqual(await leftovers(dir), []);
     });
   });
 }
 
-test("a stub mmdc that exits 0 and writes nothing: exit 1 and the existing docs/links.svg is unchanged", async () => {
-  await withSandbox(async (dir, stubs, svg) => {
-    const before = await readFile(svg);
-    const pngBefore = await readFile(pngOf(dir));
+test("a stub mmdc that exits 0 and writes nothing: exit 1 and the three outputs are unchanged", async () => {
+  await withSandbox(async (dir, stubs) => {
+    const before = await snapshot(dir);
     await stubMmdc(stubs, `: > /dev/null`);
     const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: mmdc wrote no output for docs\/links\.mmd$/m);
-    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    await assertUnchanged(dir, before);
     assert.deepEqual(await leftovers(dir), []);
   });
 });
 
-test("a stub mmdc that exits 0 and writes an empty file: exit 1 and the existing docs/links.svg is unchanged", async () => {
-  await withSandbox(async (dir, stubs, svg) => {
-    const before = await readFile(svg);
-    const pngBefore = await readFile(pngOf(dir));
+test("a stub mmdc that exits 0 and writes an empty file: exit 1 and the three outputs are unchanged", async () => {
+  await withSandbox(async (dir, stubs) => {
+    const before = await snapshot(dir);
     await stubMmdc(stubs, `while [ $# -gt 0 ]; do [ "$1" = "-o" ] && : > "$2"; shift; done`);
     const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: mmdc wrote no output for docs\/links\.mmd$/m);
-    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    await assertUnchanged(dir, before);
     assert.deepEqual(await leftovers(dir), []);
   });
 });
@@ -276,53 +308,42 @@ test("a missing docs/links.mmd: exit 1 and the missing-source message", async ()
   await withSandbox(async (dir, stubs) => {
     await stubMmdc(stubs, writeStub);
     await rm(join(dir, "docs", "links.mmd"));
-    const svg = join(dir, "docs", "links.svg");
-    const before = await readFile(svg);
-    const pngBefore = await readFile(pngOf(dir));
+    const before = await snapshot(dir);
     const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: docs\/links\.mmd is missing$/m);
     assert.equal(r.stdout, "");
-    assert.ok(before.equals(await readFile(svg)), "docs/links.svg changed");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    await assertUnchanged(dir, before);
     await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
     assert.deepEqual(await leftovers(dir), []);
   });
 });
 
-test("docs/links.svg is a directory: exit 1 and the message, mmdc is not run", async () => {
-  await withSandbox(async (dir, stubs, svg) => {
-    await stubMmdc(stubs, writeStub);
-    const pngBefore = await readFile(pngOf(dir));
-    await rm(svg);
-    await mkdir(svg);
-    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
-    assert.equal(r.code, 1, r.stderr);
-    assert.match(r.stderr, /^error: docs\/links\.svg is a directory$/m);
-    assert.equal(r.stdout, "");
-    assert.ok((await stat(svg)).isDirectory(), "docs/links.svg is no longer a directory");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
-    await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
-    assert.deepEqual(await leftovers(dir), []);
+// A directory in place of one output: refused before mmdc runs, and the other two are untouched.
+for (const name of ["svg", "png", "pdf"]) {
+  test(`docs/links.${name} is a directory: exit 1 and the message, mmdc is not run, nothing is replaced`, async () => {
+    await withSandbox(async (dir, stubs) => {
+      await stubMmdc(stubs, writeStub);
+      const target = join(dir, "docs", `links.${name}`);
+      const others = await snapshot(dir);
+      await rm(target);
+      await mkdir(target);
+      const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
+      assert.equal(r.code, 1, r.stderr);
+      assert.match(r.stderr, new RegExp(`^error: docs/links\\.${name} is a directory$`, "m"));
+      assert.equal(r.stdout, "");
+      assert.ok((await stat(target)).isDirectory(), `docs/links.${name} is no longer a directory`);
+      for (const other of ["svg", "png", "pdf"].filter((n) => n !== name)) {
+        assert.ok(
+          others[other as keyof Docs].equals(await readFile(join(dir, "docs", `links.${other}`))),
+          `docs/links.${other} changed`,
+        );
+      }
+      await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
+      assert.deepEqual(await leftovers(dir), []);
+    });
   });
-});
-
-test("docs/links.png is a directory: exit 1 and the message, mmdc is not run", async () => {
-  await withSandbox(async (dir, stubs, svg) => {
-    await stubMmdc(stubs, writeStub);
-    const svgBefore = await readFile(svg);
-    await rm(pngOf(dir), { force: true });
-    await mkdir(pngOf(dir));
-    const r = await run(join(dir, "scripts", "diagram.sh"), [], envWith(stubs, join(dir, "log")));
-    assert.equal(r.code, 1, r.stderr);
-    assert.match(r.stderr, /^error: docs\/links\.png is a directory$/m);
-    assert.equal(r.stdout, "");
-    assert.ok((await stat(pngOf(dir))).isDirectory(), "docs/links.png is no longer a directory");
-    assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
-    await assert.rejects(readFile(join(dir, "log")), { code: "ENOENT" });
-    assert.deepEqual(await leftovers(dir), []);
-  });
-});
+}
 
 // A stub mv in front of the PATH that records its arguments to $STUB_MV_LOG, one line per call, fails for the target
 // named and otherwise does what /bin/mv does.
@@ -340,44 +361,69 @@ async function stubMvCalls(log: string): Promise<string[]> {
   return (await readFile(log, "utf8")).split("\n").filter((line) => line !== "");
 }
 
-test("the second mv failing: exit 1, the message says the SVG was already replaced, no temp directory is left", async () => {
+function mvPattern(dir: string, name: string): RegExp {
+  return new RegExp(
+    `^-f ${escapeRegExp(dir)}/scripts/\\.\\./docs/\\.diagram\\.[^/]+/links\\.${name} ${escapeRegExp(dir)}/scripts/\\.\\./docs/links\\.${name}$`,
+  );
+}
+
+test("the third mv failing: exit 1, the message names all three files, svg and png are replaced, pdf is not", async () => {
   await withSandbox(async (dir, stubs, svg) => {
     await stubMmdc(stubs, writeStub);
-    await stubMv(stubs, "links.png");
-    const pngBefore = await readFile(pngOf(dir));
+    await stubMv(stubs, "links.pdf");
     const mvLog = join(dir, "mv-log");
     const r = await run(join(dir, "scripts", "diagram.sh"), [], {
       ...envWith(stubs, join(dir, "log")),
       STUB_MV_LOG: mvLog,
     });
     assert.equal(r.code, 1, r.stderr);
-    assert.match(r.stderr, /^error: cannot replace docs\/links\.png \(docs\/links\.svg was already replaced\)$/m);
+    assert.match(
+      r.stderr,
+      /^error: cannot replace docs\/links\.pdf \(docs\/links\.svg and docs\/links\.png were already replaced\)$/m,
+    );
     assert.equal(await readFile(svg, "utf8"), "stub svg");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    assert.equal(await readFile(pngOf(dir), "utf8"), "stub png");
+    assert.ok(PDF_FIXTURE.equals(await readFile(pdfOf(dir))), "docs/links.pdf changed");
     const mvCalls = await stubMvCalls(mvLog);
-    assert.equal(mvCalls.length, 2, mvCalls.join("\n"));
-    assert.match(
-      mvCalls[0],
-      new RegExp(
-        `^-f ${escapeRegExp(dir)}/scripts/\\.\\./docs/\\.diagram\\.[^/]+/links\\.svg ${escapeRegExp(dir)}/scripts/\\.\\./docs/links\\.svg$`,
-      ),
-    );
-    assert.match(
-      mvCalls[1],
-      new RegExp(
-        `^-f ${escapeRegExp(dir)}/scripts/\\.\\./docs/\\.diagram\\.[^/]+/links\\.png ${escapeRegExp(dir)}/scripts/\\.\\./docs/links\\.png$`,
-      ),
-    );
+    assert.equal(mvCalls.length, 3, mvCalls.join("\n"));
+    assert.match(mvCalls[0], mvPattern(dir, "svg"));
+    assert.match(mvCalls[1], mvPattern(dir, "png"));
+    assert.match(mvCalls[2], mvPattern(dir, "pdf"));
     assert.deepEqual(await leftovers(dir), []);
   });
 });
 
-test("the first mv failing: exit 1, the message names the SVG, and neither file changed", async () => {
+test("the second mv failing: exit 1, the message names all three files, only the SVG is replaced, no temp directory is left", async () => {
   await withSandbox(async (dir, stubs, svg) => {
     await stubMmdc(stubs, writeStub);
+    await stubMv(stubs, "links.png");
+    const before = await snapshot(dir);
+    const mvLog = join(dir, "mv-log");
+    const r = await run(join(dir, "scripts", "diagram.sh"), [], {
+      ...envWith(stubs, join(dir, "log")),
+      STUB_MV_LOG: mvLog,
+    });
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(
+      r.stderr,
+      /^error: cannot replace docs\/links\.png \(docs\/links\.svg was already replaced, docs\/links\.pdf was not touched\)$/m,
+    );
+    assert.equal(await readFile(svg, "utf8"), "stub svg");
+    assert.ok(before.png.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    assert.ok(before.pdf.equals(await readFile(pdfOf(dir))), "docs/links.pdf changed");
+    const mvCalls = await stubMvCalls(mvLog);
+    assert.equal(mvCalls.length, 2, mvCalls.join("\n"));
+    assert.match(mvCalls[0], mvPattern(dir, "svg"));
+    assert.match(mvCalls[1], mvPattern(dir, "png"));
+    assert.deepEqual(await leftovers(dir), []);
+  });
+});
+
+test("the first mv failing: exit 1, the message names the SVG, and no file changed", async () => {
+  await withSandbox(async (dir, stubs) => {
+    await stubMmdc(stubs, writeStub);
     await stubMv(stubs, "links.svg");
-    const svgBefore = await readFile(svg);
-    const pngBefore = await readFile(pngOf(dir));
+    const before = await snapshot(dir);
     const mvLog = join(dir, "mv-log");
     const r = await run(join(dir, "scripts", "diagram.sh"), [], {
       ...envWith(stubs, join(dir, "log")),
@@ -385,16 +431,10 @@ test("the first mv failing: exit 1, the message names the SVG, and neither file 
     });
     assert.equal(r.code, 1, r.stderr);
     assert.match(r.stderr, /^error: cannot replace docs\/links\.svg$/m);
-    assert.ok(svgBefore.equals(await readFile(svg)), "docs/links.svg changed");
-    assert.ok(pngBefore.equals(await readFile(pngOf(dir))), "docs/links.png changed");
+    await assertUnchanged(dir, before);
     const mvCalls = await stubMvCalls(mvLog);
     assert.equal(mvCalls.length, 1, `the png is not moved after the svg move failed: ${mvCalls.join("; ")}`);
-    assert.match(
-      mvCalls[0],
-      new RegExp(
-        `^-f ${escapeRegExp(dir)}/scripts/\\.\\./docs/\\.diagram\\.[^/]+/links\\.svg ${escapeRegExp(dir)}/scripts/\\.\\./docs/links\\.svg$`,
-      ),
-    );
+    assert.match(mvCalls[0], mvPattern(dir, "svg"));
     assert.deepEqual(await leftovers(dir), []);
   });
 });

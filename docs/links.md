@@ -142,6 +142,18 @@ Messages go to stderr, and an error stays on one line. `scripts/links.sh` drops 
 | 1 | `error: links.config.yaml: limit must be a whole number of at least 1` | `scripts/links-config.sh`: `limit` in `links.config.yaml` is not a number (a quoted number, a decimal, text, a list or a bool). |
 | 2 | `error: unknown option: <arg> (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)` | `src/main.ts`: an argument starting with `--` other than the supported options. |
 | 2 | `error: unknown option: <arg> (only --sort, --count, --exclude=GLOB, --title=TEXT and --limit=N are supported)` | `scripts/links.sh`: an argument starting with `--` other than the supported options, checked before htmlq is looked for. |
+| 1 | `error: mmdc is not installed or not on the PATH (install it, for example: npm install -g @mermaid-js/mermaid-cli)` | `scripts/diagram.sh`: mmdc is not found. |
+| 1 | `error: docs/links.mmd is missing` | `scripts/diagram.sh`: the diagram source does not exist as a file. |
+| 1 | `error: docs/links.svg is a directory` | `scripts/diagram.sh`: a directory stands where the SVG goes; nothing is rendered or replaced. |
+| 1 | `error: docs/links.png is a directory` | `scripts/diagram.sh`: the same for the PNG. |
+| 1 | `error: docs/links.pdf is a directory` | `scripts/diagram.sh`: the same for the PDF. |
+| 1 | `error: cannot create a temp directory in docs/` | `scripts/diagram.sh`: the temp directory for the renders could not be created. |
+| 1 | `error: mmdc failed rendering docs/links.mmd` | `scripts/diagram.sh`: mmdc exited with an error for one of the three formats; none of the three files changes. |
+| 1 | `error: mmdc wrote no output for docs/links.mmd` | `scripts/diagram.sh`: mmdc exited 0 but wrote an empty or no file for one of the three formats; none of the three files changes. |
+| 1 | `error: cannot replace docs/links.svg` | `scripts/diagram.sh`: the first move failed; no file was replaced. |
+| 1 | `error: cannot replace docs/links.png (docs/links.svg was already replaced, docs/links.pdf was not touched)` | `scripts/diagram.sh`: the second move failed; the new SVG sits beside the old PNG and PDF. |
+| 1 | `error: cannot replace docs/links.pdf (docs/links.svg and docs/links.png were already replaced)` | `scripts/diagram.sh`: the third move failed; the new SVG and PNG sit beside the old PDF. |
+| 2 | `usage: npm run diagram` | `scripts/diagram.sh`: called with any argument. |
 | 2 | `usage: npm run links -- [--sort] [--count] [--exclude=GLOB] [--title=TEXT] [--limit=N] <html-file> [<output-page>]` | `scripts/links.sh`: called without an HTML file. |
 
 Examples:
@@ -204,4 +216,4 @@ Arguments typed after `npm run links:config --` are passed on behind the file's,
 
 ## Regenerating the diagram
 
-The diagram is generated from its source `docs/links.mmd`. Run `npm run diagram` from the repository root. It needs `mmdc` from npm on the PATH (`npm install -g @mermaid-js/mermaid-cli`).
+The diagram is generated from its source `docs/links.mmd`. Run `npm run diagram` from the repository root. It writes the diagram as `docs/links.svg`, `docs/links.png` and `docs/links.pdf` (the PDF page has the size of the diagram). If a render fails, none of the three files changes. It needs `mmdc` from npm on the PATH (`npm install -g @mermaid-js/mermaid-cli`).
