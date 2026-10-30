@@ -49,12 +49,12 @@ tmpdir="$(mktemp -d "$docs/.diagram.XXXXXX")" || {
 trap 'rm -rf "$tmpdir"' EXIT
 trap 'exit 1' HUP INT TERM
 
-# render <format> [mmdc option...]: renders the input into the temp directory as links.<format>. Without options mmdc's
-# default size is used; the PDF gets --pdfFit, so its page has the size of the diagram.
+# render <format>: renders the input into the temp directory as links.<format>, mmdc's default size and no other option.
+# For the PDF that default is a page fitted to the diagram (mmdc 12 has no --pdfFit; --pdf-paper-format would turn the
+# fitting off), so no option is passed for any format.
 render() {
   format="$1"
-  shift
-  if ! mmdc -i "$input" -o "$tmpdir/links.$format" -e "$format" "$@"; then
+  if ! mmdc -i "$input" -o "$tmpdir/links.$format" -e "$format"; then
     echo "error: mmdc failed rendering docs/links.mmd" >&2
     exit 1
   fi
@@ -66,7 +66,7 @@ render() {
 
 render png
 render svg
-render pdf --pdfFit
+render pdf
 
 # Three renames are not atomic as a set: a failing mv after the first (permissions, a full disk) leaves a mix of new and
 # old files among docs/links.svg, docs/links.png and docs/links.pdf. All renders succeeded and no target is known to be a
